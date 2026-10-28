@@ -1,0 +1,736 @@
+<UserControl x:Class="DNFLogin.GameConfigControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="CommonStyles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 滚动内容区 -->
+        <ScrollViewer Grid.Row="0"
+                      Margin="40,28,40,8"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+                <TextBlock Text="游戏配置"
+                           Foreground="White"
+                           FontSize="18"
+                           FontWeight="SemiBold" />
+
+                <!-- 客户端目录 -->
+                <Border Background="#E6222329"
+                        CornerRadius="16"
+                        Margin="0,16,0,0">
+                    <StackPanel Margin="20,18">
+                        <TextBlock Text="客户端目录"
+                                   Foreground="#E6FFFFFF"
+                                   FontSize="13" />
+                        <TextBlock x:Name="DnfPathHint"
+                                   Text="DNF.exe 所在目录，登录时从这里启动游戏"
+                                   Foreground="#99FFFFFF"
+                                   FontSize="12"
+                                   Margin="0,4,0,0"
+                                   TextWrapping="Wrap" />
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Background="#191A1F"
+                                    BorderBrush="#2A2B31"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Height="38">
+                                <TextBox x:Name="DnfPathBox"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         Padding="12,0"
+                                         FontSize="13"
+                                         Foreground="White"
+                                         VerticalContentAlignment="Center"
+                                         CaretBrush="White"
+                                         TextChanged="DnfPathBox_TextChanged" />
+                            </Border>
+                            <Button x:Name="BrowseDnfButton"
+                                    Grid.Column="1"
+                                    Content="选择目录"
+                                    Height="38"
+                                    Margin="12,0,0,0"
+                                    FontSize="13"
+                                    Foreground="White"
+                                    Cursor="Hand"
+                                    Click="BrowseDnfButton_Click">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="BtnBd"
+                                                Background="#FFE84A3A"
+                                                CornerRadius="8"
+                                                Padding="20,0">
+                                            <ContentPresenter HorizontalAlignment="Center"
+                                                              VerticalAlignment="Center" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="BtnBd" Property="Opacity" Value="0.55" />
+                                            </Trigger>
+                                            <Trigger Property="IsPressed" Value="True">
+                                                <Setter TargetName="BtnBd" Property="Opacity" Value="0.75" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
+                        </Grid>
+                        <StackPanel x:Name="PatchPanel" Orientation="Horizontal" Margin="0,12,0,0">
+                            <TextBlock x:Name="PatchStateText"
+                                       Text="客户端补丁：未检测"
+                                       Foreground="#99FFFFFF"
+                                       FontSize="12"
+                                       VerticalAlignment="Center" />
+                            <Button x:Name="CheckPatchButton"
+                                    Content="检测补丁"
+                                    Height="30"
+                                    Margin="12,0,0,0"
+                                    Style="{StaticResource ServerSecondaryBtn}"
+                                    Click="CheckPatchButton_Click" />
+                            <Button x:Name="InstallPatchButton"
+                                    Content="安装补丁"
+                                    Height="30"
+                                    Margin="10,0,0,0"
+                                    Style="{StaticResource ServerPrimaryBtn}"
+                                    Click="InstallPatchButton_Click" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- 登录模式 + Admin Token（外网版 M3：整体折叠，登录模式由锁版本固定为远程） -->
+                <Border x:Name="ModeCard"
+                        Background="#E6222329"
+                        CornerRadius="16"
+                        Margin="0,20,0,0">
+                    <StackPanel Margin="20,18">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="登录模式"
+                                       Foreground="#E6FFFFFF"
+                                       FontSize="13"
+                                       VerticalAlignment="Center" />
+                            <RadioButton x:Name="ModeLocalRadio"
+                                         Grid.Column="1"
+                                         Content="本地模式"
+                                         GroupName="LoginModeGroup"
+                                         Style="{StaticResource RadioStyle}"
+                                         Margin="24,0,0,0"
+                                         VerticalAlignment="Center"
+                                         Checked="ModeRadio_Checked" />
+                            <RadioButton x:Name="ModeRemoteRadio"
+                                         Grid.Column="2"
+                                         Content="远程模式"
+                                         GroupName="LoginModeGroup"
+                                         Style="{StaticResource RadioStyle}"
+                                         Margin="24,0,0,0"
+                                         VerticalAlignment="Center"
+                                         Checked="ModeRadio_Checked" />
+                            <TextBlock x:Name="ModeHintText"
+                                       Grid.Row="1"
+                                       Grid.ColumnSpan="3"
+                                       Text="本地：直连 MySQL + 固定令牌"
+                                       Foreground="#99FFFFFF"
+                                       FontSize="12"
+                                       VerticalAlignment="Center"
+                                       Margin="0,8,0,0" />
+                        </Grid>
+
+                        <Border x:Name="AdminTokenCard"
+                                Background="#191A1F"
+                                BorderBrush="#2A2B31"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Margin="0,14,0,0">
+                            <Grid Margin="14,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="96" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Admin Token"
+                                           Foreground="#E6FFFFFF"
+                                           FontSize="13"
+                                           VerticalAlignment="Center" />
+                                <Border Grid.Column="1"
+                                        Background="#222329"
+                                        BorderBrush="#2A2B31"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Height="36">
+                                    <TextBox x:Name="AdminTokenBox"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             Padding="12,0"
+                                             FontSize="13"
+                                             Foreground="White"
+                                             VerticalContentAlignment="Center"
+                                             CaretBrush="White" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <TextBlock x:Name="AdminTokenHintText"
+                                   Text="本地模式：绑定账号时作为管理接口令牌（X-Admin-Token），留空则启动/登录前会提示填写"
+                                   Foreground="#99FFFFFF"
+                                   FontSize="12"
+                                   Margin="0,8,0,0"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <!-- 数据库连接 -->
+                <Border x:Name="DbCard"
+                        Background="#E6222329"
+                        CornerRadius="16"
+                        Margin="0,20,0,0">
+                    <StackPanel Margin="20,18">
+                        <TextBlock Text="数据库连接"
+                                   Foreground="#E6FFFFFF"
+                                   FontSize="13" />
+
+                        <!-- 模式 -->
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="96" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="模式"
+                                       Foreground="#E6FFFFFF"
+                                       FontSize="13"
+                                       VerticalAlignment="Center" />
+                            <Border Grid.Column="1"
+                                    Background="#191A1F"
+                                    BorderBrush="#2A2B31"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Height="36">
+                                <ComboBox x:Name="DbModeBox"
+                                          Style="{StaticResource DbComboStyle}"
+                                          SelectedValuePath="Content">
+                                    <ComboBoxItem Content="sqlite" />
+                                    <ComboBoxItem Content="portable" />
+                                </ComboBox>
+                            </Border>
+                        </Grid>
+
+                        <!-- 主机 -->
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="96" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="主机"
+                                       Foreground="#E6FFFFFF"
+                                       FontSize="13"
+                                       VerticalAlignment="Center" />
+                            <Border Grid.Column="1"
+                                    Background="#191A1F"
+                                    BorderBrush="#2A2B31"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Height="36">
+                                <TextBox x:Name="DbHostBox"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         Padding="12,0"
+                                         FontSize="13"
+                                         Foreground="White"
+                                         VerticalContentAlignment="Center"
+                                         CaretBrush="White"
+                                         Text="127.0.0.1" />
+                            </Border>
+                        </Grid>
+
+                        <!-- 端口 -->
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="96" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="端口"
+                                       Foreground="#E6FFFFFF"
+                                       FontSize="13"
+                                       VerticalAlignment="Center" />
+                            <Border Grid.Column="1"
+                                    Background="#191A1F"
+                                    BorderBrush="#2A2B31"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Height="36">
+                                <TextBox x:Name="DbPortBox"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         Padding="12,0"
+                                         FontSize="13"
+                                         Foreground="White"
+                                         VerticalContentAlignment="Center"
+                                         CaretBrush="White"
+                                         Text="13306" />
+                            </Border>
+                        </Grid>
+
+                        <!-- 数据库名 -->
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="96" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="数据库名"
+                                       Foreground="#E6FFFFFF"
+                                       FontSize="13"
+                                       VerticalAlignment="Center" />
+                            <Border Grid.Column="1"
+                                    Background="#191A1F"
+                                    BorderBrush="#2A2B31"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Height="36">
+                                <TextBox x:Name="DbNameBox"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         Padding="12,0"
+                                         FontSize="13"
+                                         Foreground="White"
+                                         VerticalContentAlignment="Center"
+                                         CaretBrush="White"
+                                         Text="dnf_local" />
+                            </Border>
+                        </Grid>
+
+                        <!-- 用户名 -->
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="96" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="用户名"
+                                       Foreground="#E6FFFFFF"
+                                       FontSize="13"
+                                       VerticalAlignment="Center" />
+                            <Border Grid.Column="1"
+                                    Background="#191A1F"
+                                    BorderBrush="#2A2B31"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Height="36">
+                                <TextBox x:Name="DbUserBox"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         Padding="12,0"
+                                         FontSize="13"
+                                         Foreground="White"
+                                         VerticalContentAlignment="Center"
+                                         CaretBrush="White"
+                                         Text="root" />
+                            </Border>
+                        </Grid>
+
+                        <!-- 密码 -->
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="96" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="密码"
+                                       Foreground="#E6FFFFFF"
+                                       FontSize="13"
+                                       VerticalAlignment="Center" />
+                            <Border Grid.Column="1"
+                                    Background="#191A1F"
+                                    BorderBrush="#2A2B31"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Height="36">
+                                <PasswordBox x:Name="DbPasswordBox"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             Padding="12,0"
+                                             FontSize="13"
+                                             Foreground="White"
+                                             VerticalContentAlignment="Center"
+                                             CaretBrush="White" />
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 远程服务器配置卡片（远程模式输入：IP + 转发端口） -->
+                <Border x:Name="RemoteServerCard"
+                        Background="#E6222329"
+                        CornerRadius="16"
+                        Margin="0,20,0,0"
+                        Visibility="Collapsed">
+                    <StackPanel Margin="20,18">
+                        <TextBlock Text="远程服务器配置"
+                                   Foreground="#E6FFFFFF"
+                                   FontSize="13" />
+
+                        <!-- 服务器 IP -->
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="96" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="服务器 IP"
+                                       Foreground="#E6FFFFFF"
+                                       FontSize="13"
+                                       VerticalAlignment="Center" />
+                            <Border Grid.Column="1"
+                                    Background="#191A1F"
+                                    BorderBrush="#2A2B31"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Height="36">
+                                <TextBox x:Name="RemoteIpBox"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         Padding="12,0"
+                                         FontSize="13"
+                                         Foreground="White"
+                                         VerticalContentAlignment="Center"
+                                         CaretBrush="White"
+                                         TextChanged="RemoteIpBox_TextChanged" />
+                            </Border>
+                        </Grid>
+
+                        <TextBlock x:Name="RemoteModeHintText"
+                                   Text="远程模式：填服务器公网 IP，保存后即可登录。"
+                                   Foreground="#99FFFFFF"
+                                   FontSize="12"
+                                   Margin="0,10,0,0"
+                                   TextWrapping="Wrap" />
+
+                    </StackPanel>
+                </Border>
+
+                <!-- 服务端根目录 -->
+                <Border x:Name="ServerRootCard"
+                        Background="#E6222329"
+                        CornerRadius="16"
+                        Margin="0,20,0,0">
+                    <StackPanel Margin="20,18">
+                        <TextBlock Text="服务端根目录"
+                                   Foreground="#E6FFFFFF"
+                                   FontSize="13" />
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Background="#191A1F"
+                                    BorderBrush="#2A2B31"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Height="38">
+                                <TextBox x:Name="ServerPathBox"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         Padding="12,0"
+                                         FontSize="13"
+                                         Foreground="White"
+                                         VerticalContentAlignment="Center"
+                                         CaretBrush="White"
+                                         TextChanged="ServerPathBox_TextChanged" />
+                            </Border>
+                            <Button x:Name="ServerBrowseButton"
+                                    Grid.Column="1"
+                                    Content="选择目录"
+                                    Height="38"
+                                    Margin="10,0,0,0"
+                                    Style="{StaticResource ServerSecondaryBtn}"
+                                    Click="ServerBrowse_Click" />
+                            <Button x:Name="ServerRefreshButton"
+                                    Grid.Column="2"
+                                    Content="读取配置"
+                                    Height="38"
+                                    Margin="10,0,0,0"
+                                    Style="{StaticResource ServerPrimaryBtn}"
+                                    Click="ServerRefresh_Click" />
+                        </Grid>
+                        <TextBlock x:Name="ServerRootHintText"
+                                   Text="选择 DNF90 服务端根目录（包含 runtime 的目录），如 D:\DNF90-server"
+                                   Foreground="#99FFFFFF"
+                                   FontSize="12"
+                                   Margin="0,8,0,0"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <!-- 服务器配置信息 -->
+                <Border x:Name="ServerConfigCard"
+                        Background="#E6222329"
+                        CornerRadius="16"
+                        Margin="0,20,0,0">
+                    <StackPanel Margin="20,18">
+                        <Grid>
+                            <TextBlock Text="服务器配置"
+                                       Foreground="#E6FFFFFF"
+                                       FontSize="13"
+                                       VerticalAlignment="Center" />
+                            <TextBlock x:Name="ServerConfigState"
+                                       HorizontalAlignment="Right"
+                                       VerticalAlignment="Center"
+                                       FontSize="12"
+                                       Foreground="#99FFFFFF" />
+                        </Grid>
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="30" />
+                                <RowDefinition Height="30" />
+                                <RowDefinition Height="30" />
+                                <RowDefinition Height="30" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="数据库模式" Foreground="#99FFFFFF" FontSize="12" VerticalAlignment="Center" />
+                            <TextBlock x:Name="SrvDbMode" Grid.Row="0" Grid.Column="1"
+                                       Text="-" Style="{StaticResource ServerInfoValue}" />
+                            <TextBlock Grid.Row="0" Grid.Column="2"
+                                       Text="管理端口" Foreground="#99FFFFFF" FontSize="12" VerticalAlignment="Center" />
+                            <TextBlock x:Name="SrvAdminListen" Grid.Row="0" Grid.Column="3"
+                                       Text="-" Style="{StaticResource ServerInfoValue}" />
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       Text="频道监听" Foreground="#99FFFFFF" FontSize="12" VerticalAlignment="Center" />
+                            <TextBlock x:Name="SrvChannelListen" Grid.Row="1" Grid.Column="1"
+                                       Text="-" Style="{StaticResource ServerInfoValue}" />
+                            <TextBlock Grid.Row="1" Grid.Column="2"
+                                       Text="分片 ID" Foreground="#99FFFFFF" FontSize="12" VerticalAlignment="Center" />
+                            <TextBlock x:Name="SrvShardId" Grid.Row="1" Grid.Column="3"
+                                       Text="-" Style="{StaticResource ServerInfoValue}" />
+
+                            <TextBlock Grid.Row="2" Grid.Column="0"
+                                       Text="PVF 路径" Foreground="#99FFFFFF" FontSize="12" VerticalAlignment="Center" />
+                            <TextBlock x:Name="SrvPvfPath" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3"
+                                       Text="-" Style="{StaticResource ServerInfoValue}" />
+
+                            <TextBlock Grid.Row="3" Grid.Column="0"
+                                       Text="客户端目录" Foreground="#99FFFFFF" FontSize="12" VerticalAlignment="Center" />
+                            <TextBlock x:Name="SrvClientDir" Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3"
+                                       Text="-" Style="{StaticResource ServerInfoValue}" />
+                        </Grid>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                            <Border x:Name="ServerInitBadge"
+                                    Background="#3A3B40"
+                                    CornerRadius="4"
+                                    Padding="8,3"
+                                    VerticalAlignment="Center">
+                                <TextBlock x:Name="ServerInitState"
+                                           FontSize="12"
+                                           Foreground="#E6FFFFFF"
+                                           Text="未检测" />
+                            </Border>
+                            <Button x:Name="ServerInitButton"
+                                    Content="一键初始化"
+                                    Height="32"
+                                    Margin="12,0,0,0"
+                                    Style="{StaticResource ServerPrimaryBtn}"
+                                    Click="ServerInit_Click"
+                                    Visibility="Collapsed" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- 数据库模式切换 -->
+                <Border x:Name="DbSwitchCard"
+                        Background="#E6222329"
+                        CornerRadius="16"
+                        Margin="0,20,0,0">
+                    <StackPanel Margin="20,18">
+                        <TextBlock Text="数据库模式"
+                                   Foreground="#E6FFFFFF"
+                                   FontSize="13" />
+                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                            <RadioButton x:Name="DbModeFollow"
+                                         Content="跟随配置文件"
+                                         GroupName="ServerDbGroup"
+                                         Style="{StaticResource RadioStyle}"
+                                         IsChecked="True" />
+                            <RadioButton x:Name="DbModeMySql"
+                                         Content="MySQL（便携版）"
+                                         GroupName="ServerDbGroup"
+                                         Style="{StaticResource RadioStyle}"
+                                         Margin="24,0,0,0" />
+                            <RadioButton x:Name="DbModeSqlite"
+                                         Content="SQLite"
+                                         GroupName="ServerDbGroup"
+                                         Style="{StaticResource RadioStyle}"
+                                         Margin="24,0,0,0" />
+                        </StackPanel>
+                        <Button x:Name="ServerSwitchDbButton"
+                                Content="应用模式"
+                                Height="32"
+                                Margin="0,10,0,0"
+                                HorizontalAlignment="Left"
+                                Style="{StaticResource ServerSecondaryBtn}"
+                                Click="ServerSwitchDb_Click" />
+                        <TextBlock Text="切换会直接改写 runtime\config\instance.json 的 database.mode；建议停止服务端后再切换。SQLite 模式无需 MySQL 目录，MySQL 模式需保留完整 runtime\mysql。"
+                                   Foreground="#99FFFFFF"
+                                   FontSize="12"
+                                   Margin="0,8,0,0"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <!-- 启停 / 初始化 + 日志 -->
+                <Border x:Name="ServerOpsCard"
+                        Background="#E6222329"
+                        CornerRadius="16"
+                        Margin="0,20,0,20">
+                    <StackPanel Margin="20,18">
+                        <Grid>
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="ServerStartButton"
+                                        Content="启动服务端"
+                                        Height="38"
+                                        Style="{StaticResource ServerPrimaryBtn}"
+                                        Click="ServerStart_Click" />
+                                <Button x:Name="ServerStopButton"
+                                        Content="停止服务端"
+                                        Height="38"
+                                        Margin="12,0,0,0"
+                                        Style="{StaticResource ServerSecondaryBtn}"
+                                        Click="ServerStop_Click" />
+                            </StackPanel>
+                            <TextBlock x:Name="ServerStatusText"
+                                       HorizontalAlignment="Right"
+                                       VerticalAlignment="Center"
+                                       FontSize="13"
+                                       Foreground="#99FFFFFF" />
+                        </Grid>
+                        <Border Background="#191A1F"
+                                CornerRadius="10"
+                                Margin="0,12,0,0"
+                                Height="180">
+                            <TextBox x:Name="ServerLogBox"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     IsReadOnly="True"
+                                     FontFamily="Consolas"
+                                     FontSize="12"
+                                     Foreground="#99FFFFFF"
+                                     Padding="12,8"
+                                     VerticalScrollBarVisibility="Auto"
+                                     TextWrapping="Wrap" />
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- 底部操作按钮：一键清空 / 测试连接 / 保存 -->
+        <Grid Grid.Row="1" Margin="40,12,40,20">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="ClearServerButton"
+                        Content="一键清空"
+                        Height="36"
+                        FontSize="13"
+                        Foreground="#E6FFFFFF"
+                        Cursor="Hand"
+                        Margin="0,0,12,0"
+                        Click="ClearServerButton_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="BtnBd"
+                                    Background="#191A1F"
+                                    BorderBrush="#2A2B31"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="18,0">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="BtnBd" Property="Opacity" Value="0.85" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+                <Button x:Name="TestServerButton"
+                        Content="测试连接"
+                        Height="36"
+                        FontSize="13"
+                        Foreground="White"
+                        Cursor="Hand"
+                        Margin="0,0,12,0"
+                        Click="TestServerButton_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="BtnBd"
+                                    Background="#191A1F"
+                                    BorderBrush="#2A2B31"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="18,0">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="BtnBd" Property="Opacity" Value="0.85" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+                <Button x:Name="SaveServerButton"
+                        Content="保存"
+                        Height="36"
+                        FontSize="13"
+                        Foreground="White"
+                        Cursor="Hand"
+                        Click="SaveServerButton_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="BtnBd"
+                                    Background="#FFE84A3A"
+                                    CornerRadius="8"
+                                    Padding="22,0">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="BtnBd" Property="Opacity" Value="0.55" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="BtnBd" Property="Opacity" Value="0.75" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

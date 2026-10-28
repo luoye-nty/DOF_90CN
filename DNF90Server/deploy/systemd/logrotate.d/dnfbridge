@@ -1,0 +1,9 @@
+/opt/longheng/logs/packet_log.txt {
+    daily
+    rotate 7
+    size 100M
+    compress
+    missingok
+    notifempty
+    copytruncate
+}

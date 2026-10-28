@@ -1,0 +1,73 @@
+package dnfbridge
+
+import (
+	"encoding/binary"
+	"strings"
+
+	"longheng.io/server/internal/modules/dnf/itemquality"
+	dnfrepo "longheng.io/server/internal/modules/dnf/repository"
+)
+
+const (
+	currentEquipmentTopQualitySeed         uint32 = itemquality.TopSeed
+	currentEquipmentRandomQualitySeedCount uint32 = itemquality.RandomSeedCount
+)
+
+func newCurrentEquipmentQualitySeed() (uint32, error) {
+	return itemquality.NewRandomSeed()
+}
+
+func validCurrentEquipmentQualitySeed(seed uint32) bool {
+	return itemquality.Valid(seed)
+}
+
+func currentEquipmentEntryHasCurrentRaw77(entry dnfrepo.EquipmentEntry) bool {
+	return len(entry.RawEntry) == currentItemListEntryWireSize &&
+		entry.ItemID > 0 &&
+		binary.LittleEndian.Uint32(entry.RawEntry[2:6]) == uint32(entry.ItemID)
+}
+
+// currentEquipmentQualitySeedFromExtra reads only the durable Extra aliases.
+// The full rule, including the raw+0x06 fallback, lives in itemquality.StackSeed.
+func currentEquipmentQualitySeedFromExtra(extra map[string]string) uint32 {
+	return sceneInventoryExtraUint32(extra, "quality_seed", "amount_or_count", "count_or_instance")
+}
+
+// currentEquipmentQualitySeedFromStack is this projection's face of the shared
+// durable seed rule. It stays a thin wrapper on purpose: the login/full-list
+// projection here and the inventory module's op13/op14 re-encoders must resolve
+// the raw+0x06 word of an equipment row identically, or an inventory mutation
+// (an enchant's 0x000D refresh, for example) repaints every equipment row with
+// the grade of seed 1 until the next select-character list rebuild.
+func currentEquipmentQualitySeedFromStack(stack dnfrepo.ItemStack) uint32 {
+	return itemquality.StackSeed(stack)
+}
+
+func applyCurrentEquipmentQualitySeed(stack *dnfrepo.ItemStack, seed uint32) error {
+	return itemquality.Apply(stack, seed)
+}
+
+func currentItemStackValueA(stack dnfrepo.ItemStack) uint32 {
+	kind := strings.TrimSpace(stack.Extra["item_kind"])
+	explicitQualitySeed := sceneInventoryExtraUint32(stack.Extra, "quality_seed")
+	if explicitQualitySeed != 0 ||
+		(strings.EqualFold(kind, string(dungeonDropItemEquipment)) && currentEquipmentQualitySeedFromExtra(stack.Extra) != 0) {
+		// The quality seed belongs only to raw+0x06. Do not mirror it into the
+		// independent raw+0x0E item state field. Legacy amount_or_count is
+		// shared by stackables, so it is equipment metadata only when the PVF
+		// kind says equipment (or quality_seed is explicitly present).
+		return sceneInventoryExtraUint32(stack.Extra, "value_a", "item_uid", "serial")
+	}
+	if value := sceneInventoryExtraUint32(stack.Extra, "value_a", "instance_value", "item_uid", "serial", "count_or_instance"); value != 0 {
+		return value
+	}
+	// The current EXE's right-click op44 path rejects a stackable row whose
+	// raw+0x0E identity is zero before it sends any request. Relational
+	// inventory rows imported from the old JSON store legitimately have no
+	// historical instance_value. Use their authoritative item id as a stable
+	// wire identity instead of leaving the client-side use route disabled.
+	if strings.EqualFold(kind, string(dungeonDropItemStackable)) && stack.ItemID > 0 {
+		return sceneInventoryUint32FromInt64(stack.ItemID)
+	}
+	return 0
+}

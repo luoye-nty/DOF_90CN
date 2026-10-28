@@ -1,0 +1,17 @@
+[Unit]
+Description=DNF90 Web Admin (网页管理后台, HTTP 18114)
+After=network-online.target mysql.service dnf90server.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/dnf90/admin
+ExecStart=/opt/dnf90/bin/dnf90admin -config /opt/dnf90/admin/admin.json
+Restart=always
+RestartSec=3
+StandardOutput=append:/opt/dnf90/logs/dnf90admin.log
+StandardError=append:/opt/dnf90/logs/dnf90admin.log
+
+[Install]
+WantedBy=multi-user.target

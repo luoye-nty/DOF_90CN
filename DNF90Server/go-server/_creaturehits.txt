@@ -1,0 +1,7 @@
+﻿equipment/character/common/title/chn_400330110.equ: [increase upgrade compound rate]
+equipment/character/common/title/craftsmanship.equ: [increase upgrade compound rate]
+equipment/character/common/title/tecipient_ofthe_faveo_kiri.equ: [increase upgrade compound rate]
+equipment/creature/chn_hilder_newyear/chn_hilder_newyear_400990169.equ: [increase upgrade compound rate]
+equipment/creature/hilda/hilda.equ: [increase upgrade compound rate]
+equipment/creature/riz.equ: [increase upgrade compound rate]
+equipment/creature/riz_jin.equ: [increase upgrade compound rate]

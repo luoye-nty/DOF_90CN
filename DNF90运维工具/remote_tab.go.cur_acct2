@@ -1,0 +1,809 @@
+//go:build paid
+
+// 远程管理页（仅赞助版编译）：服务器端 P0+P1 的 GUI 配套。
+//   - 远程管理开关（默认关）：开启时生成盐 + 配对码哈希并落 config.json；
+//   - 展示当前配对码明文 + 复制；重新生成 16 位去易混码；自定义修改（≥8 位）；
+//   - 关闭 / 重新生成 / 修改后旧管理 token 全量作废（Auth.SetPairing / RevokeAll）；
+//   - 页面同时展示管理 API 监听地址与证书状态；
+//   - main.go 在 verifyLicenseGate 通过后调用 maybeStartManage()：manage.enabled=true
+//     且已设置配对码时后台拉起 HTTPS 管理服务（internal/manage）。
+//   - 业务端点（bans / redeem-codes / server start-stop）通过 manage.Bridge 复用
+//     本文件既有 GUI/底层实现，不在 manage 包内重复业务逻辑。
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/lxn/walk"
+	. "github.com/lxn/walk/declarative"
+
+	"dnf90ops/internal/manage"
+	"dnf90ops/internal/serverdir"
+	"dnf90ops/internal/store"
+)
+
+// 远程管理服务运行时状态（仅 paid 版存在）。
+var (
+	manageMu        sync.Mutex
+	manageSvc       *manage.Server
+	manageRunCtx    context.Context
+	manageRunCancel context.CancelFunc
+)
+
+// mainPages 赞助版：基础四页 + 账号管理 + 远程管理页。
+// 账号管理页走免费版同源实现 accountTab()（无 paid tag），两端功能一致。
+func (a *App) mainPages() []TabPage {
+	return []TabPage{
+		{Title: "一键启动", Content: Composite{Layout: VBox{MarginsZero: true, SpacingZero: true}, Children: a.serviceTab()}},
+		{Title: "认证服务", Content: Composite{Layout: VBox{MarginsZero: true, SpacingZero: true}, Children: a.authTab()}},
+		{Title: "封禁管理", Content: Composite{Layout: VBox{MarginsZero: true, SpacingZero: true}, Children: a.banTab()}},
+		{Title: "账号管理", Content: Composite{Layout: VBox{MarginsZero: true, SpacingZero: true}, Children: a.accountTab()}},
+		{Title: "CDK管理", Content: Composite{Layout: VBox{MarginsZero: true, SpacingZero: true}, Children: a.cdkTab()}},
+		{Title: "远程管理", Content: Composite{Layout: VBox{MarginsZero: true, SpacingZero: true}, Children: a.remoteTab()}},
+	}
+}
+
+// maybeStartManage 赞助版：授权门通过后，若 manage.enabled 且已设置配对码则后台拉起管理服务。
+func (a *App) maybeStartManage() {
+	// 泡点 Runner 与远程管理服务同生命周期：启动即拉起常驻循环（幂等），由配置开关控制发放。
+	a.startPointsinkRunner()
+	m := a.cfg.Manage
+	if m == nil {
+		return
+	}
+	if m.Enabled && strings.TrimSpace(m.PairingCodeHash) != "" && strings.TrimSpace(m.PairingCodeSalt) != "" {
+		if err := a.ensureManageStarted(); err != nil {
+			a.logf("后台管理服务启动失败: %v", err)
+			walk.MsgBox(a.mw, "远程管理", "后台管理服务启动失败:\n"+err.Error(), walk.MsgBoxIconError)
+		} else {
+			a.logf("后台管理服务已启动，监听 %s", m.ListenAddr)
+		}
+	} else if m.Enabled {
+		a.logf("config.manage.enabled=true 但未设置配对码，请在「远程管理」页开启并复制配对码")
+	}
+	a.updateManageUI()
+}
+
+// remoteTab 远程管理页 UI。
+func (a *App) remoteTab() []Widget {
+	return []Widget{
+		Composite{
+			Layout: VBox{Margins: Margins{12, 10, 12, 10}, Spacing: 8},
+			Children: []Widget{
+				GroupBox{
+					Title:  "远程管理总开关",
+					Layout: VBox{Margins: Margins{10, 8, 10, 8}, Spacing: 6},
+					Children: []Widget{
+						Composite{
+							Layout: HBox{MarginsZero: true, Spacing: 8},
+							Children: []Widget{
+								CheckBox{
+									AssignTo:         &a.manageChk,
+									Text:             "启用后台管理服务（HTTPS）",
+									OnCheckedChanged: a.onManageToggle,
+								},
+								Label{
+									Text:      "默认关闭。开启后工具将监听 18113 端口提供 /manage/v1/* API（需配对码登录），请配合家用电脑端客户端使用。",
+									TextColor: walk.RGB(90, 90, 90),
+									MinSize:   Size{Width: 420, Height: 0},
+								},
+							},
+						},
+						Label{
+							AssignTo:  &a.manageHintL,
+							Text:      "提示：开启时会自动生成 16 位配对码；请立即复制保存，客户端登录后凭此配对码换取短时管理 token。",
+							TextColor: walk.RGB(120, 90, 0),
+						},
+					},
+				},
+				GroupBox{
+					Title:  "服务状态",
+					Layout: VBox{Margins: Margins{10, 8, 10, 8}, Spacing: 6},
+					Children: []Widget{
+						Label{AssignTo: &a.manageListenL, Text: "监听地址：-"},
+						Label{AssignTo: &a.manageCertL, Text: "证书状态：-"},
+					},
+				},
+				GroupBox{
+					Title:  "配对码管理",
+					Layout: VBox{Margins: Margins{10, 8, 10, 8}, Spacing: 8},
+					Children: []Widget{
+						Composite{
+							Layout: HBox{MarginsZero: true, Spacing: 8},
+							Children: []Widget{
+								LineEdit{
+									AssignTo: &a.manageCodeBox,
+									ReadOnly: true,
+									MinSize:  Size{Width: 330, Height: 0},
+									Font:     Font{Family: "Consolas", PointSize: 11},
+								},
+								PushButton{Text: "复制配对码", OnClicked: a.onManageCopy},
+								PushButton{Text: "重新生成（16位）", OnClicked: a.onManageRegen},
+							},
+						},
+						Composite{
+							Layout: HBox{MarginsZero: true, Spacing: 8},
+							Children: []Widget{
+								LineEdit{
+									AssignTo: &a.manageCustomEdit,
+									MinSize:  Size{Width: 330, Height: 0},
+								},
+								PushButton{Text: "应用自定义配对码（≥8位）", OnClicked: a.onManageApplyCustom},
+							},
+						},
+						Label{
+							Text:      "配对码仅存储 sha256(salt+code) 哈希用于鉴权；明文仅在本页展示并同步写入 config.json（本地）。修改配对码后已签发的管理 token 将全部失效。",
+							TextColor: walk.RGB(90, 90, 90),
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// ---------- GUI 事件 ----------
+
+func (a *App) onManageToggle() {
+	if a.manageChk.Checked() {
+		if walk.MsgBox(a.mw, "远程管理", "开启后台管理服务将监听 "+a.cfg.Manage.ListenAddr+"（HTTPS），并自动生成 16 位配对码。\n请确保仅在可信内网/公网部署并妥善保存配对码。是否继续？", walk.MsgBoxYesNo|walk.MsgBoxIconQuestion) != walk.DlgCmdYes {
+			a.manageChk.SetChecked(false)
+			return
+		}
+		a.manageEnable()
+	} else {
+		if walk.MsgBox(a.mw, "远程管理", "确定关闭后台管理服务？\n已签发的管理 token 将全部作废，配对码将被清除（下次开启会生成新码）。", walk.MsgBoxYesNo|walk.MsgBoxIconWarning) != walk.DlgCmdYes {
+			a.manageChk.SetChecked(true)
+			return
+		}
+		a.manageDisable()
+	}
+}
+
+func (a *App) manageEnable() {
+	m := a.cfg.Manage
+	if m == nil {
+		a.manageChk.SetChecked(false)
+		return
+	}
+	// 开启时才生成盐+配对码；已有可用配对码（明文+哈希匹配）则复用，避免重复变码。
+	needPair := strings.TrimSpace(m.PairingCodeHash) == "" ||
+		strings.TrimSpace(m.PairingCodePlain) == "" ||
+		manage.PairingHash(m.PairingCodeSalt, m.PairingCodePlain) != m.PairingCodeHash
+	if needPair {
+		if err := a.manageSetupPairing(); err != nil {
+			walk.MsgBox(a.mw, "远程管理", "生成配对码失败: "+err.Error(), walk.MsgBoxIconError)
+			a.manageChk.SetChecked(false)
+			return
+		}
+	}
+	m.Enabled = true
+	if err := a.cfg.Save(); err != nil {
+		walk.MsgBox(a.mw, "远程管理", "保存配置失败: "+err.Error(), walk.MsgBoxIconError)
+		a.manageChk.SetChecked(false)
+		return
+	}
+	if err := a.ensureManageStarted(); err != nil {
+		m.Enabled = false
+		_ = a.cfg.Save()
+		a.manageChk.SetChecked(false)
+		walk.MsgBox(a.mw, "远程管理", "后台管理服务启动失败:\n"+err.Error(), walk.MsgBoxIconError)
+		return
+	}
+	a.updateManageUI()
+	a.logf("后台管理服务已开启（监听 %s），配对码已生成/复用，请妥善保存", m.ListenAddr)
+}
+
+func (a *App) manageDisable() {
+	m := a.cfg.Manage
+	if m == nil {
+		return
+	}
+	m.Enabled = false
+	// 关闭远程管理：清除配对码与盐，旧 token 随服务停止与 SetPairing 全量作废。
+	m.PairingCodeSalt = ""
+	m.PairingCodeHash = ""
+	m.PairingCodePlain = ""
+	if err := a.cfg.Save(); err != nil {
+		walk.MsgBox(a.mw, "远程管理", "保存配置失败: "+err.Error(), walk.MsgBoxIconError)
+		return
+	}
+	a.manageStopService()
+	a.manageChk.SetChecked(false)
+	a.updateManageUI()
+	a.logf("后台管理服务已关闭")
+}
+
+// manageSetupPairing 随机盐 + 16 位配对码，写入 cfg.Manage（未落盘，由调用方 Save）。
+func (a *App) manageSetupPairing() error {
+	m := a.cfg.Manage
+	if m == nil {
+		return errors.New("manage 配置段缺失")
+	}
+	salt, err := manage.GenSalt()
+	if err != nil {
+		return err
+	}
+	code, err := manage.GenPairingCode(16)
+	if err != nil {
+		return err
+	}
+	m.PairingCodeSalt = salt
+	m.PairingCodeHash = manage.PairingHash(salt, code)
+	m.PairingCodePlain = code
+	// 服务运行中立即同步内存认证状态（变更后旧 token 全量作废）。
+	if manageSvc != nil {
+		manageSvc.Auth().SetPairing(salt, m.PairingCodeHash)
+	}
+	return nil
+}
+
+func (a *App) onManageRegen() {
+	if walk.MsgBox(a.mw, "重新生成配对码", "将生成新的 16 位配对码，旧配对码立即失效，已签发的管理 token 全部作废。\n是否继续？", walk.MsgBoxYesNo|walk.MsgBoxIconWarning) != walk.DlgCmdYes {
+		return
+	}
+	if err := a.manageSetupPairing(); err != nil {
+		walk.MsgBox(a.mw, "重新生成配对码", "生成失败: "+err.Error(), walk.MsgBoxIconError)
+		return
+	}
+	if err := a.cfg.Save(); err != nil {
+		walk.MsgBox(a.mw, "重新生成配对码", "保存配置失败: "+err.Error(), walk.MsgBoxIconError)
+		return
+	}
+	a.updateManageUI()
+	a.logf("配对码已重新生成，旧码与旧 token 全部失效")
+}
+
+func (a *App) onManageApplyCustom() {
+	raw := strings.TrimSpace(a.manageCustomEdit.Text())
+	if len(raw) < 8 {
+		walk.MsgBox(a.mw, "自定义配对码", "配对码长度不能少于 8 位（当前 "+fmt.Sprint(len(raw))+" 位）", walk.MsgBoxIconWarning)
+		return
+	}
+	if len(raw) > 64 {
+		walk.MsgBox(a.mw, "自定义配对码", "配对码长度不能超过 64 位", walk.MsgBoxIconWarning)
+		return
+	}
+	norm := strings.ToUpper(raw)
+	m := a.cfg.Manage
+	if m == nil {
+		return
+	}
+	salt, err := manage.GenSalt()
+	if err != nil {
+		walk.MsgBox(a.mw, "自定义配对码", "生成盐失败: "+err.Error(), walk.MsgBoxIconError)
+		return
+	}
+	m.PairingCodeSalt = salt
+	m.PairingCodeHash = manage.PairingHash(salt, norm)
+	m.PairingCodePlain = norm
+	if manageSvc != nil {
+		manageSvc.Auth().SetPairing(salt, m.PairingCodeHash)
+	}
+	if err := a.cfg.Save(); err != nil {
+		walk.MsgBox(a.mw, "自定义配对码", "保存配置失败: "+err.Error(), walk.MsgBoxIconError)
+		return
+	}
+	a.manageCustomEdit.SetText("")
+	a.updateManageUI()
+	a.logf("已应用自定义配对码，旧 token 全部作废")
+}
+
+func (a *App) onManageCopy() {
+	code := strings.TrimSpace(a.manageCodeBox.Text())
+	if code == "" || code == "（未设置）" {
+		walk.MsgBox(a.mw, "复制配对码", "当前没有可复制的配对码，请先开启远程管理或重新生成", walk.MsgBoxIconWarning)
+		return
+	}
+	clip := walk.Clipboard()
+	if err := clip.SetText(code); err != nil {
+		walk.MsgBox(a.mw, "复制配对码", "写入剪贴板失败: "+err.Error(), walk.MsgBoxIconError)
+		return
+	}
+	a.logf("配对码已复制到剪贴板")
+}
+
+// ---------- 服务启停 ----------
+
+// ensureManageStarted 启动（或复用）后台管理 HTTPS 服务；幂等。
+func (a *App) ensureManageStarted() error {
+	manageMu.Lock()
+	defer manageMu.Unlock()
+	if manageSvc != nil {
+		return nil
+	}
+	m := a.cfg.Manage
+	if m == nil || !m.Enabled || strings.TrimSpace(m.PairingCodeSalt) == "" || strings.TrimSpace(m.PairingCodeHash) == "" {
+		return errors.New("manage 未启用或未设置配对码")
+	}
+
+	srv, err := manage.NewServer(a.cfg, a.manageBridge(), slog.Default())
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := srv.Start(ctx, nil); err != nil {
+		cancel()
+		return err
+	}
+	manageSvc = srv
+	manageRunCtx = ctx
+	manageRunCancel = cancel
+	return nil
+}
+
+// manageStopService 停止管理服务并释放状态（幂等）。
+func (a *App) manageStopService() {
+	manageMu.Lock()
+	defer manageMu.Unlock()
+	if manageSvc != nil {
+		manageSvc.Close()
+		if manageRunCancel != nil {
+			manageRunCancel()
+		}
+		manageSvc = nil
+		manageRunCancel = nil
+	}
+}
+
+// updateManageUI 依据 cfg 刷新远程管理页展示（须在 UI 线程调用）。
+func (a *App) updateManageUI() {
+	m := a.cfg.Manage
+	if m == nil || a.manageChk == nil {
+		return
+	}
+	a.manageChk.SetChecked(m.Enabled)
+	if a.manageCodeBox != nil {
+		if strings.TrimSpace(m.PairingCodePlain) != "" {
+			a.manageCodeBox.SetText(m.PairingCodePlain)
+		} else {
+			a.manageCodeBox.SetText("（未设置）")
+		}
+	}
+	// 服务状态文本。
+	running := manageSvc != nil
+	state := "未运行"
+	if running {
+		state = "运行中"
+	}
+	if a.manageListenL != nil {
+		if m.Enabled && running {
+			a.manageListenL.SetText(fmt.Sprintf("监听地址：%s（HTTPS，%s）", m.ListenAddr, state))
+		} else if m.Enabled {
+			a.manageListenL.SetText(fmt.Sprintf("监听地址：%s（HTTPS，已配置未运行）", m.ListenAddr))
+		} else {
+			a.manageListenL.SetText(fmt.Sprintf("监听地址：%s（HTTPS，未启用）", m.ListenAddr))
+		}
+	}
+	if a.manageCertL != nil {
+		cert := strings.TrimSpace(m.TLSCert)
+		key := strings.TrimSpace(m.TLSKey)
+		exists := cert != "" && key != ""
+		if exists {
+			cAbs, _ := filepath.Abs(cert)
+			kAbs, _ := filepath.Abs(key)
+			_, cerr := os.Stat(cAbs)
+			_, kerr := os.Stat(kAbs)
+			st := "已存在"
+			if cerr != nil || kerr != nil {
+				st = "不存在（服务启动时自动生成，SAN 含公网 IP）"
+			}
+			a.manageCertL.SetText(fmt.Sprintf("证书状态：%s / %s（%s）", cAbs, kAbs, st))
+		} else {
+			a.manageCertL.SetText("证书状态：未配置路径")
+		}
+	}
+}
+
+// ---------- 复用桥 ----------
+
+// manageBridge 组装 internal/manage 所需桥接；业务逻辑全部复用现有实现。
+func (a *App) manageBridge() *manage.Bridge {
+	return &manage.Bridge{
+		ServerRoot: func() string {
+			var root string
+			a.uiSafe(func() {
+				if a.rootEdit != nil {
+					root = strings.TrimSpace(a.rootEdit.Text())
+				}
+			})
+			if root == "" {
+				root = strings.TrimSpace(a.cfg.ServerRoot)
+			}
+			return root
+		},
+		PublicIP: func() string {
+			return strings.TrimSpace(a.cfg.PublicIP)
+		},
+		StartServer: func(ctx context.Context) error {
+			return a.manageServerStart(ctx)
+		},
+		StopServer: func(ctx context.Context) error {
+			return a.manageServerStop(ctx)
+		},
+		AuthRunning: func() bool {
+			return a.svcOn
+		},
+		Inspect: func(root string) *serverdir.Inspection {
+			if strings.TrimSpace(root) == "" {
+				return &serverdir.Inspection{Message: "服务端根目录为空"}
+			}
+			return serverdir.Inspect(root)
+		},
+		// AC 账号管理（阶段1）：GM 直连封装（account_gm.go）；审计由 handlers_account.go 统一落 manage_account.jsonl。
+		AcctGMCall: func(ctx context.Context, method, path string, body, out any, actor string) (string, error) {
+			return a.acctGMDo(ctx, method, path, body, out, actor, "")
+		},
+		AcctDungeons: func() (map[string]int, error) {
+			return acctDungeonsMaxDifficulty(), nil
+		},
+		AcctAudit: func(ctx context.Context, actor, method, path string, detail map[string]any) {
+			a.acctAuditAppend("manage_account.jsonl", detail)
+		},
+		Store: func() *store.Store {
+			if !a.svcOn || a.st == nil {
+				return nil
+			}
+			return a.st
+		},
+		OnlineCount: func() int {
+			if !a.svcOn || a.st == nil {
+				return 0
+			}
+			recs, err := a.st.ListOnlineAccounts(context.Background(), 0)
+			if err != nil {
+				return 0
+			}
+			return len(recs)
+		},
+		BanNow: func(ctx context.Context, banType, banValue, username, reason string, days int) (manage.BanNowResult, error) {
+			return a.manageBanNow(ctx, banType, banValue, username, reason, days)
+		},
+		BanKick: func(ctx context.Context, banType, banValue string) (int, error) {
+			return a.kickByAdmin(banType, banValue)
+		},
+		RedeemCreate: func(ctx context.Context, name string, count, maxRedeems int, contentRaw, rewardJSON, remark, createdBy string) ([]string, error) {
+			st := a.manageStore()
+			if st == nil {
+				return nil, errors.New("认证服务未运行，无法生成 CDK")
+			}
+			return st.CreateRedeemCodeBatch(ctx, count, name, contentRaw, maxRedeems, rewardJSON, remark, createdBy)
+		},
+		RedeemExported: func(ctx context.Context, name string, codes []string) {
+			a.manageExportRedeemTxt(name, codes)
+		},
+		RetryRedeemMails: func(ctx context.Context, code string) (int, int, error) {
+			return a.manageRetryRedeemMails(ctx, code)
+		},
+		PublishAnnounce: func(ctx context.Context, content, color string) (int64, error) {
+			st := a.manageStore()
+			if st == nil {
+				return 0, errors.New("认证服务未运行，无法发布公告")
+			}
+			id, err := st.CreateAnnouncement(ctx, content, color, "admin")
+			if err != nil {
+				return 0, err
+			}
+			if a.svc != nil {
+				payload, _ := json.Marshal(map[string]any{"id": id, "content": content, "color": color})
+				a.svc.Announce().Broadcast(payload)
+			}
+			return id, nil
+		},
+		PointsinkStatus: func() manage.PointsinkStatus {
+			return a.psBridgeStatus(a.psStatus())
+		},
+		PointsinkApply: func(ctx context.Context, enabled bool, intervalSeconds, points int) (manage.PointsinkStatus, error) {
+			st, err := a.psApply(ctx, enabled, intervalSeconds, points)
+			return a.psBridgeStatus(st), err
+		},
+	}
+}
+
+// psBridgeStatus psStat -> manage.PointsinkStatus。
+func (a *App) psBridgeStatus(s psStat) manage.PointsinkStatus {
+	return manage.PointsinkStatus{
+		Enabled:         s.Enabled,
+		IntervalSeconds: s.IntervalSeconds,
+		Points:          s.Points,
+		Running:         s.Running,
+		Awarded:         s.Awarded,
+		GrantedPoints:   s.GrantedPoints,
+		ErrorCount:      s.ErrorCount,
+		LastGrantAt:     s.LastGrantAt,
+		NextGrantAt:     s.NextGrantAt,
+	}
+}
+
+// manageStore 返回可用 store 或 nil（与 GUI requireAuthStore 同源判断）。
+func (a *App) manageStore() *store.Store {
+	if !a.svcOn || a.st == nil {
+		return nil
+	}
+	return a.st
+}
+
+// manageServerStart 复用 onStart 一键启动链路：仅在 UI 线程触发，随后等待 busy 翻转确认完成。
+func (a *App) manageServerStart(ctx context.Context) error {
+	return a.manageTriggerAndWait(ctx, "启动", func() { a.onStart() })
+}
+
+// manageServerStop 复用 onStop 停止链路。
+func (a *App) manageServerStop(ctx context.Context) error {
+	return a.manageTriggerAndWait(ctx, "停止", func() { a.onStop() })
+}
+
+// manageTriggerAndWait 在 UI 线程执行 UI 动作（onStart/onStop），等待其 runAsync 完成（busy=false）。
+func (a *App) manageTriggerAndWait(ctx context.Context, label string, fn func()) error {
+	if a.mw == nil {
+		return errors.New("GUI 尚未就绪")
+	}
+	var triggerErr error
+	done := make(chan struct{})
+	a.mw.Synchronize(func() {
+		if a.busy {
+			triggerErr = errors.New("工具正忙（有其他任务执行中），请稍后再试")
+			close(done)
+			return
+		}
+		fn() // 内部 runAsync 同步置 busy=true 并异步执行
+		close(done)
+	})
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+	}
+	if triggerErr != nil {
+		return triggerErr
+	}
+	// 等待 UI 后台任务结束（onStart/onStop 的 runAsync 完成会把 busy 置回 false）。
+	deadline := time.After(10 * time.Minute)
+	for {
+		var busy bool
+		a.mw.Synchronize(func() { busy = a.busy })
+		if !busy {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline:
+			return fmt.Errorf("%s任务超时未完成", label)
+		case <-time.After(700 * time.Millisecond):
+		}
+	}
+}
+
+// ---------- 业务复用实现 ----------
+
+// manageBanNow 对齐 GUI onBanDo 语义（无 UI）：写库 → 踢下线(GM) → GM 踢人事件。
+// banType 支持 account / ip / machine / triple；triple 时按 username 解析账号并一键三封。
+func (a *App) manageBanNow(ctx context.Context, banType, banValue, username, reason string, days int) (manage.BanNowResult, error) {
+	st := a.manageStore()
+	if st == nil {
+		return manage.BanNowResult{}, errors.New("认证服务未运行，无法执行封禁")
+	}
+	operator := "ops"
+	banType = strings.ToLower(strings.TrimSpace(banType))
+	banValue = strings.TrimSpace(banValue)
+	reason = strings.TrimSpace(reason)
+
+	if banType == "triple" {
+		accName := strings.TrimSpace(username)
+		if accName == "" {
+			accName = banValue
+		}
+		acc, err := st.GetAccountByUsername(ctx, accName)
+		if err != nil {
+			return manage.BanNowResult{}, fmt.Errorf("账号不存在或查询失败: %w", err)
+		}
+		targets := []struct {
+			bt, bv string
+		}{
+			{store.BanAccount, acc.AccountID},
+			{store.BanIP, acc.LastLoginIP},
+			{store.BanMachine, acc.MachineID},
+		}
+		res := manage.BanNowResult{Type: "account", Value: acc.AccountID}
+		for _, t := range targets {
+			if strings.TrimSpace(t.bv) == "" {
+				continue
+			}
+			if _, err := st.Ban(ctx, t.bt, t.bv, acc.Username, reason, operator, days); err != nil {
+				res.Warnings = append(res.Warnings, fmt.Sprintf("封禁 %s=%s 失败: %v", t.bt, t.bv, err))
+				continue
+			}
+			n, kerr := a.kickByAdmin(t.bt, t.bv)
+			if kerr != nil {
+				res.Warnings = append(res.Warnings, fmt.Sprintf("踢下线请求失败(%s=%s): %v", t.bt, t.bv, kerr))
+			} else {
+				res.Kicked += n
+			}
+		}
+		if _, err := st.CreateGMKickEvent(ctx, acc.AccountID, "kick", reason, operator); err != nil {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("写入 GM 踢人事件失败: %v", err))
+		}
+		return res, nil
+	}
+
+	// 普通单类型封禁（account / ip / machine）。
+	res := manage.BanNowResult{Type: banType, Value: banValue}
+	banValue2 := banValue
+	userName2 := strings.TrimSpace(username)
+	if banType == store.BanAccount {
+		acc, err := st.GetAccountByUsername(ctx, banValue)
+		if err != nil {
+			return res, fmt.Errorf("账号不存在或查询失败: %w", err)
+		}
+		banValue2 = acc.AccountID
+		userName2 = acc.Username
+	}
+	rec, err := st.Ban(ctx, banType, banValue2, userName2, reason, operator, days)
+	if err != nil {
+		return res, err
+	}
+	res.Value = banValue2
+	n, kerr := a.kickByAdmin(banType, banValue2)
+	if kerr != nil {
+		res.Warnings = append(res.Warnings, fmt.Sprintf("踢下线请求失败: %v（若玩家不在线可忽略）", kerr))
+	} else {
+		res.Kicked = n
+	}
+	if banType == store.BanAccount && rec != nil && strings.TrimSpace(rec.Username) != "" {
+		if _, err := st.CreateGMKickEvent(ctx, banValue2, "kick", reason, operator); err != nil {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("写入 GM 踢人事件失败: %v", err))
+		}
+	}
+	return res, nil
+}
+
+// manageRetryRedeemMails CDK 失败邮件补发：code 为空时遍历全部 CDK；返回成功/失败条数与首个错误。
+func (a *App) manageRetryRedeemMails(ctx context.Context, code string) (int, int, error) {
+	st := a.manageStore()
+	if st == nil {
+		return 0, 0, errors.New("认证服务未运行，无法补发邮件")
+	}
+	code = strings.TrimSpace(code)
+
+	var targetCodes []string
+	if code != "" {
+		norm, err := store.NormalizeRedeemCode(code)
+		if err != nil {
+			return 0, 0, err
+		}
+		codes, err := st.ListRedeemCodes(ctx, norm, 1, 10)
+		if err != nil {
+			return 0, 0, err
+		}
+		found := false
+		for i := range codes {
+			if codes[i].RedeemCode == norm {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return 0, 0, fmt.Errorf("未找到兑换码 %s", norm)
+		}
+		targetCodes = append(targetCodes, norm)
+	} else {
+		page := 1
+		for {
+			codes, err := st.ListRedeemCodes(ctx, "", page, 500)
+			if err != nil {
+				return 0, 0, err
+			}
+			for i := range codes {
+				targetCodes = append(targetCodes, codes[i].RedeemCode)
+			}
+			if len(codes) < 500 {
+				break
+			}
+			page++
+		}
+	}
+
+	sent, failed := 0, 0
+	var firstErr error
+	for _, tc := range targetCodes {
+		s, f, err := a.manageRetryRedeemMailOne(ctx, tc)
+		sent += s
+		failed += f
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return sent, failed, firstErr
+}
+
+// manageRetryRedeemMailOne 对单个码补发失败邮件（复刻 GUI onCdkRetryMails 业务逻辑）。
+func (a *App) manageRetryRedeemMailOne(ctx context.Context, code string) (int, int, error) {
+	st := a.manageStore()
+	if st == nil {
+		return 0, 0, errors.New("认证服务未运行")
+	}
+	norm, err := store.NormalizeRedeemCode(code)
+	if err != nil {
+		return 0, 0, err
+	}
+	codes, err := st.ListRedeemCodes(ctx, norm, 1, 50)
+	if err != nil {
+		return 0, 0, err
+	}
+	var target *store.RedeemCode
+	for i := range codes {
+		if codes[i].RedeemCode == norm {
+			target = &codes[i]
+			break
+		}
+	}
+	if target == nil {
+		return 0, 0, fmt.Errorf("未找到兑换码 %s", norm)
+	}
+	attachments := parseCdkRewardJSON(target.RewardJSON)
+
+	reds, err := st.ListRedeemRedemptions(ctx, norm, 1000)
+	if err != nil {
+		return 0, 0, err
+	}
+	sent, failed := 0, 0
+	for i := range reds {
+		r := &reds[i]
+		if r.MailStatus != "failed" {
+			continue
+		}
+		if strings.TrimSpace(r.CharacterID) == "" {
+			a.manageLogf("补发跳过(无角色ID) redemption_id=%d code=%s", r.ID, norm)
+			continue
+		}
+		mailErr := a.cdkGmSendMail(ctx, cdkGMMailRequest{
+			CharacterID: r.CharacterID,
+			Title:       "CDK兑换奖励",
+			Body:        "兑换成功：" + target.Name,
+			Attachments: attachments,
+		})
+		if mailErr != nil {
+			failed++
+			a.manageLogf("补发失败 code=%s username=%s: %v", norm, r.Username, mailErr)
+			_ = st.SetRedemptionMailResult(ctx, r.ID, "failed", truncateStr(mailErr.Error()))
+			continue
+		}
+		sent++
+		_ = st.SetRedemptionMailResult(ctx, r.ID, "sent", "")
+	}
+	return sent, failed, nil
+}
+
+// manageExportRedeemTxt 生成成功后自动导出 TXT（对齐 GUI 自动导出行为，落 cdk_export 目录）。
+func (a *App) manageExportRedeemTxt(name string, codes []string) {
+	if len(codes) == 0 {
+		return
+	}
+	lines := make([][3]string, 0, len(codes))
+	for _, c := range codes {
+		lines = append(lines, [3]string{c, name, "未兑换"})
+	}
+	p := filepath.Join(cdkExportBaseDir(), cdkExportFileName("", name))
+	if err := os.WriteFile(p, []byte(buildCdkTxtContent(lines)), 0o666); err != nil {
+		a.manageLogf("CDK 生成成功，但自动导出 TXT 失败: %v", err)
+		return
+	}
+	a.manageLogf("CDK 已自动导出: %s（%d 张）", p, len(codes))
+}
+
+// manageLogf 线程安全的日志（经 UI 主线程写入日志框）。
+func (a *App) manageLogf(format string, args ...interface{}) {
+	a.uiSafe(func() {
+		a.logf(format, args...)
+	})
+}

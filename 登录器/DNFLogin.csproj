@@ -1,0 +1,179 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>落叶DNF登录器</AssemblyName>
+    <TargetFramework>net8.0-windows7.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\DNF.ico</ApplicationIcon>
+    <!-- 规避 SDK 已知问题：项目名 DNFLogin 与 AssemblyName(YH登录器) 不一致时，
+         WPF wpftmp 临时项目与主项目共享 obj 目录导致自动生成的 AssemblyInfo 特性重复(CS0579)。
+         禁用自动生成，改由 Properties\AssemblyInfo.cs 手动声明。 -->
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <!-- 对外只交付一个 EXE：.NET 运行时、WPF 原生库及嵌入的 90CN.dll
+         全部打包进单文件，避免再分发登录器 DLL 或更新包内多个文件。 -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishDir>$(MSBuildProjectDirectory)\build\</PublishDir>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- S4Gm PvfLib 使用不安全代码（PVF 二进制解析） -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- PVFUPDATE：客户端 Script.pvf 自动更新（自检 + 直链下载替换 + 登录按钮切「更新」）。
+         免费版与外网版都要有这个能力（服务端 /launcher/v1/pvf/* 两个版本都提供），
+         所以它不能挂在 EXTERNAL 上；各 Edition 分支只负责追加 EXTERNAL/分版宏。 -->
+    <DefineConstants>$(DefineConstants);PVFUPDATE</DefineConstants>
+    <!-- LVERCHECK：登录器版本校验（启动自检 + 点登录各查一次，版本不符走强制更新）。
+          同样两个版本都启用：这套服务端的认证服务（免费版）本来就提供
+          /launcher/v1/version-check，校验开关由服务端 config.json 控制。 -->
+    <DefineConstants>$(DefineConstants);LVERCHECK</DefineConstants>
+  </PropertyGroup>
+
+  <!-- ===== Edition 分版映射（M2）：默认/Free 不加任何符号；Ext90/ExtA21/ExtA12 注入 EXTERNAL+分版符号并改产物名 ===== -->
+  <PropertyGroup Condition="'$(Edition)' == 'Ext90'">
+    <DefineConstants>$(DefineConstants);EXTERNAL;V90</DefineConstants>
+    <!-- 90 外网版产物单独命名，避免和免费版（落叶DNF登录器.exe）混在一起：
+         外网版对外报 X-Client-Edition: paid，只能连赞助版运维工具，
+         连免费版运维工具会全线 403（2026-10-17 踩过）。 -->
+    <AssemblyName>落叶DNF登录器-外网版</AssemblyName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Edition)' == 'ExtA21'">
+    <DefineConstants>$(DefineConstants);EXTERNAL;VS4A21</DefineConstants>
+    <AssemblyName>YH登录器-A21外网版</AssemblyName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Edition)' == 'ExtA12'">
+    <DefineConstants>$(DefineConstants);EXTERNAL;VS4A12</DefineConstants>
+    <AssemblyName>YH登录器-A12外网版</AssemblyName>
+  </PropertyGroup>
+
+
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="DNFLogin.build.json" />
+    <EmbeddedResource Include="DNFLogin.build.json" LogicalName="DNFLogin.BuildParameters.json" />
+  </ItemGroup>
+
+  <Target Name="ValidateLauncherBuildConfig" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\DNFLogin.build.json')"
+           Text="缺少登录器构建参数文件：DNFLogin.build.json" />
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="AduSkin" Version="1.1.1.9" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+    <PackageReference Include="SharpCompress" Version="0.50.4" />
+    <!-- 覆盖传递依赖 2.1.11（SQLite<3.50.2 存在 CVE-2025-6965），升级到 3.50.4 -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- S4Gm 后端集成（A12/A21 GM 源码级）：排除依赖 ASP.NET Core 的 Web 壳与登录校验，其余自动参与编译 -->
+    <Compile Remove="S4Gm\Program.cs" />
+    <Compile Remove="S4Gm\Services\GmAccessControl.cs" />
+    <!-- M4 client.yh 原语/自检目录：默认全版本移除；仅 EXTERNAL(Ext90/ExtA21/ExtA12) 条件引入（见下 ItemGroup），
+         Free 版完全不编译不引用 BouncyCastle，零影响 -->
+    <Compile Remove="Services\ClientYh\**" />
+  </ItemGroup>
+
+  <!-- M4：外网版专属 client.yh 原语（AES-256-GCM + Ed25519 验签）与启动自检，仅 EXTERNAL 三版引入 -->
+  <ItemGroup Condition="'$(Edition)' == 'Ext90' Or '$(Edition)' == 'ExtA21' Or '$(Edition)' == 'ExtA12'">
+    <!-- 只吃 .cs：这里原来是 `Services\ClientYh\**`（含所有文件），目录里放一个
+         ClientYhGuard.cs.bak_xxx 备份就会被一起编译，报"类型已定义"（CS0101/CS0111）把
+         外网版构建直接搞挂。用 **\*.cs 把非源码文件挡在外面。 -->
+    <Compile Include="Services\ClientYh\**\*.cs" />
+    <!-- Ed25519 签名原语（登录器不内置，避免托管侧密钥算法外泄路径复杂化） -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 备份副本一律不参与编译（.cs.bak_xxx / .cs.bak-xxx / .cs.bak 这些同目录副本
+         不带 .cs 后缀，默认 SDK 通配不会吃；但任何 `dir\**` 形式的 Include 都会吃，
+         所以这里统一兜一层，避免以后再加目录级 Include 时踩同一个坑）。 -->
+    <Compile Remove="**\*.bak" />
+    <Compile Remove="**\*.bak_*" />
+    <Compile Remove="**\*.bak-*" />
+    <Compile Remove="**\*.cur_*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 移除 UseWindowsForms 自动导入的全局 using，避免与 WPF 类型冲突 -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\bg-default-Bg1.jpg" />
+    <Resource Include="Assets\logo.png" />
+    <Resource Include="Assets\DNF_90.png" />
+    <Resource Include="Assets\DNF_S4A21.png" />
+    <Resource Include="Assets\DNF_S4A12.png" />
+    <Resource Include="Assets\icon-collectionl.png" />
+    <Resource Include="Assets\top-control-bar-close-icon.png" />
+    <Resource Include="Assets\top-control-bar-minimize-icon.png" />
+    <Resource Include="Assets\icon-loginfo-menu-setting.png" />
+    <Resource Include="Assets\default-bg-img.png" />
+    <Resource Include="Assets\RotatingBackground1.jpg" />
+    <Resource Include="Assets\RotatingBackground2.jpg" />
+    <Resource Include="Assets\RotatingBackground3.png" />
+    <Resource Include="Assets\RotatingBackground4.jpg" />
+    <Resource Include="Assets\RotatingBackground5.png" />
+    <Resource Include="Assets\RotatingBackground6.png" />
+    <Resource Include="Assets\icon-message-error.png" />
+    <Resource Include="Assets\icon-message-success.png" />
+    <!-- GM 工具加载转圈图标：编译为嵌入资源，单文件发布后依然可用 -->
+    <Resource Include="Assets\icon-loading.png" />
+    <!-- 版本切换加载转圈图标 -->
+    <Resource Include="Assets\global-loading.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Assets\login-icon.ico" />
+    <Resource Include="Assets\DNF.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- AHK 连发运行时：worker 已由 Ahk2Exe 编译为中性名 exe（YHHelper.exe，内部为 AHK 自己的连发代码），
+         运行时仅释放单个 exe 并以子进程运行（Job Object 绑定生命周期），登录器只把设置传给 AHK 发挥其原生连发能力 -->
+    <EmbeddedResource Include="Assets\YHHelper.exe" LogicalName="DNFLogin.Resources.YHHelper.exe" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 游戏助手-顺图/拾取 Helper DLL：由 build.bat 用 gcc 编译 Helper\DNFHelper.c 生成后作为资源嵌入，
+         运行时以随机文件名释放到临时目录注入 DNF.exe，注入后删除防提取 -->
+    <EmbeddedResource Include="Helper\DNFHelper.dll" LogicalName="DNFLogin.Resources.HelperDNFHelper.dll" />
+  <!-- 存活守护 watchdog DLL：由 build.bat 用 gcc 编译 Helper\GuardWatchdog.c 生成后作为资源嵌入，
+       全版本注入；登录器退出/被挂起时心跳停更，watchdog 自杀游戏进程（反作弊基础）。 -->
+  <EmbeddedResource Include="Helper\GuardWatchdog.dll" LogicalName="DNFLogin.Resources.GuardWatchdog.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 7002 认证核心 DLL（Ed25519 签名 + X25519 ECDH + AES-256-GCM）：
+         由 S4OpsTool\S4AuthCore 的 build_dll.bat 编译并加 Themida 壳后输出到 Helper\s4authcore.dll，
+         作为嵌入资源打进单文件 exe，运行时由 S4AuthCoreNative 释放到临时目录 LoadLibrary，
+         登录器所有远程认证核心逻辑均在 DLL 内，托管侧不落任何密钥/算法。
+
+         2026-10-15：本构建只保留 90 版本（版本选择面板已隐藏），S4A21/S4A12 的 7002 认证用不到，
+         而源码里没有这份 Helper\s4authcore.dll（它在另一仓库 S4OpsTool\S4AuthCore 里编译生成），
+         故取消嵌入，保证能正常编译。要恢复 S4 版本：把 s4authcore.dll 放回 Helper\ 再取消下面注释。 -->
+    <!-- <EmbeddedResource Include="Helper\s4authcore.dll" LogicalName="DNFLogin.Resources.s4authcore.dll" /> -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 90 客户端组网 DLL：90CN.dll 由用户自行维护更新（LANA 握手 / DNF_REMOTE_AUTH_* 环境变量认证用），
+         作为嵌入资源打进单文件 exe（EmbeddedResource 为全局项，Free/Ext90/ExtA21/ExtA12 四版构建自动全带，
+         五个 build 脚本无需逐版修改），运行时由自检/启动前复检按需写入或覆盖到客户端目录 -->
+    <EmbeddedResource Include="Helper\90CN.dll" LogicalName="DNFLogin.Resources.90CN.dll" />
+  </ItemGroup>
+
+</Project>

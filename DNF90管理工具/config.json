@@ -1,0 +1,8 @@
+{
+  "server_ip": "",
+  "port": 18113,
+  "remember_code": false,
+  "pairing_code": "",
+  "cert_fingerprint": "",
+  "acct_pvf_path": ""
+}

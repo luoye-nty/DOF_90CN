@@ -1,0 +1,19 @@
+[Unit]
+Description=DNF90 Auth Service (launcher HTTPS API, port 18112)
+After=network-online.target mysql.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/dnf90/auth
+ExecStart=/opt/dnf90/bin/dnf90auth -config /opt/dnf90/auth/config.json
+Restart=always
+RestartSec=3
+# 只依赖本机 MySQL，启动很快
+TimeoutStartSec=60
+StandardOutput=append:/opt/dnf90/logs/dnf90auth.log
+StandardError=append:/opt/dnf90/logs/dnf90auth.log
+
+[Install]
+WantedBy=multi-user.target

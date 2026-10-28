@@ -1,0 +1,1641 @@
+// DNF90 运维工具：S4OpsTool 风格 TabWidget 重构版。
+
+//
+
+// 页面一「一键启动」：服务端根目录选择 → 结构/初始化检测 → 一键初始化（调用原版
+
+// DNF90Control database select --prepare）→ 一键启停（env 直启 DNF90Server.exe，
+
+// 不走 DNF90Control start，避免 public_addr 被写回内网；公网下发以
+
+// DNFBRIDGE_SERVER_IP env 为准）。
+
+// 页面二「认证服务」：保留原登录器认证 API（公网 HTTPS 18112 + 内部回调查验），
+
+// 供异环登录器验证登录使用。
+
+package main
+
+import (
+	"context"
+
+	"fmt"
+
+	"log/slog"
+
+	"os"
+
+	"os/exec"
+
+	"path/filepath"
+
+	"strconv"
+
+	"strings"
+
+	"sync"
+
+	"syscall"
+
+	"time"
+
+	"dnf90ops/internal/config"
+
+	"dnf90ops/internal/ops"
+
+	"dnf90ops/internal/server"
+
+	"dnf90ops/internal/serverdir"
+
+	"dnf90ops/internal/store"
+
+	"github.com/lxn/walk"
+
+	. "github.com/lxn/walk/declarative"
+)
+
+// App 主窗口状态。
+
+type App struct {
+	cfg *config.Config
+
+	pm *ops.ProcessManager
+
+	svc *server.Service
+
+	svcCancel context.CancelFunc
+
+	st *store.Store
+
+	svcOn bool // 认证服务运行中
+
+	busy bool // 有后台任务进行中
+
+	logMu sync.Mutex
+
+	logBuf []string
+
+	logDirty int
+
+	// ---- UI ----
+
+	mw *walk.MainWindow
+
+	statusL *walk.Label
+
+	logEdit *walk.TextEdit
+
+	rootEdit *walk.LineEdit
+
+	ipEdit *walk.LineEdit
+
+	initBtn *walk.PushButton
+
+	startBtn *walk.PushButton
+
+	stopBtn *walk.PushButton
+
+	refreshBtn *walk.PushButton
+
+	serverBtn *walk.PushButton
+
+	authBtn *walk.PushButton
+
+	authStateL *walk.Label
+
+	lastRunning bool
+}
+
+func (a *App) logf(format string, args ...interface{}) {
+
+	line := fmt.Sprintf(format, args...)
+
+	if a.logEdit != nil {
+
+		a.logEdit.AppendText("[" + time.Now().Format("15:04:05") + "] " + line + "\r\n")
+
+	}
+
+}
+
+func main() {
+
+	exeDir, err := os.Executable()
+
+	if err != nil || filepath.Dir(exeDir) == "" {
+
+		exeDir = "."
+
+	}
+
+	cfgPath := filepath.Join(filepath.Dir(exeDir), "config.json")
+
+	cfg, err := config.Load(cfgPath)
+
+	if err != nil {
+
+		walk.MsgBox(nil, "DNF90运维工具", "配置加载失败: "+err.Error(), walk.MsgBoxIconError)
+
+		return
+
+	}
+
+	a := &App{cfg: cfg, pm: ops.NewProcessManager(nil)}
+
+	a.logf("== DNF90 运维工具 ==")
+
+	var mw *walk.MainWindow
+
+	a.mw = mw
+
+	if err := (MainWindow{
+
+		AssignTo: &mw,
+
+		Title:   "DNF90 运维工具",
+		Visible: false, // 赞助版需先通过在线授权验证再显示；免费版紧随其后放行
+
+		MinSize: Size{Width: 860, Height: 620},
+
+		Size: Size{Width: 960, Height: 700},
+
+		Layout: VBox{MarginsZero: true, SpacingZero: true},
+
+		Children: []Widget{
+
+			Composite{
+
+				Layout: VBox{Margins: Margins{8, 6, 8, 6}, Spacing: 6},
+
+				Children: []Widget{
+
+					TabWidget{
+
+						Pages: []TabPage{
+
+							{Title: "一键启动", Layout: VBox{}, Children: a.serviceTab()},
+
+							{Title: "认证服务", Layout: VBox{}, Children: a.authTab()},
+							{Title: "封禁管理", Layout: VBox{}, Children: a.banTab()},
+						},
+					},
+
+					Label{Text: "运行日志："},
+
+					TextEdit{
+
+						AssignTo: &a.logEdit, ReadOnly: true,
+
+						VScroll: true, HScroll: true,
+
+						MinSize: Size{Width: 0, Height: 230},
+
+						MaxSize: Size{Width: 0, Height: 380},
+
+						Font: Font{Family: "Consolas", PointSize: 9},
+					},
+
+					Label{AssignTo: &a.statusL, Text: "就绪", TextColor: walk.RGB(32, 100, 32)},
+				},
+			},
+		},
+	}).Create(); err != nil {
+
+		slog.Error("create main window failed", "err", err)
+
+		return
+
+	}
+
+	a.mw = mw
+
+	a.mw.SetIcon(walk.IconApplication())
+
+	a.mw.Closing().Attach(func(canceled *bool, reason walk.CloseReason) {
+
+		if a.busy {
+
+			a.logf("有任务执行中，等待结束后再退出")
+
+			*canceled = true
+
+			return
+
+		}
+
+		a.logf("正在退出，停止子进程...")
+
+		if a.pm != nil {
+
+			a.pm.Kill()
+
+		}
+
+	})
+
+	a.loadUIFromCfg()
+
+	// 授权门：赞助版先在线验证（登录框/心跳），免费版直接放行。
+	if err := verifyLicenseGate(a); err != nil {
+		walk.MsgBox(nil, "DNF90 运维工具", err.Error(), walk.MsgBoxIconError)
+		return
+	}
+	a.mw.SetVisible(true)
+
+	a.pm = ops.NewProcessManager(func(line string) { a.uiSafe(func() { a.logf("%s", line) }) })
+
+	go a.loopRefresh()
+
+	// UI 消息循环启动后做首次检测。
+
+	go func() {
+
+		time.Sleep(800 * time.Millisecond)
+
+		a.refreshNow(true)
+
+	}()
+
+	// 打开工具自动获取公网 IP（无需手动点击）。
+
+	go func() {
+
+		time.Sleep(2500 * time.Millisecond)
+
+		a.autoPublicIP()
+
+	}()
+
+	a.mw.Run()
+
+}
+
+// uiSafe 主线程执行 UI 更新。
+
+func (a *App) uiSafe(fn func()) {
+
+	if a.mw == nil {
+
+		return
+
+	}
+
+	a.mw.Synchronize(fn)
+
+}
+
+func (a *App) loadUIFromCfg() {
+
+	a.rootEdit.SetText(a.cfg.ServerRoot)
+
+	a.ipEdit.SetText(a.cfg.PublicIP)
+
+}
+
+// ================= 页面构建 =================
+
+func (a *App) serviceTab() []Widget {
+
+	return []Widget{
+
+		Composite{
+
+			Layout: Grid{Columns: 2, Margins: Margins{10, 12, 10, 6}, Spacing: 8},
+
+			Children: []Widget{
+
+				Label{Text: "服务端根目录:"},
+
+				Composite{Layout: HBox{MarginsZero: true, Spacing: 6}, Children: []Widget{
+
+					LineEdit{AssignTo: &a.rootEdit, ToolTipText: "DNF90 服务端根目录（含 runtime 与 START.bat）"},
+
+					PushButton{Text: "浏览...", OnClicked: a.onBrowseRoot},
+				}},
+
+				Label{Text: "公网 IP(下发地址):"},
+
+				Composite{Layout: HBox{MarginsZero: true, Spacing: 6}, Children: []Widget{
+
+					LineEdit{
+
+						AssignTo: &a.ipEdit, ToolTipText: "启动时以 DNFBRIDGE_SERVER_IP 注入，玩家拿到该地址连接",
+
+						OnEditingFinished: func() { a.persistUI() },
+					},
+
+					PushButton{Text: "自动获取", OnClicked: a.onAutoIP},
+				}},
+
+				Label{Text: "联动认证:"},
+
+				Label{Text: "一键启动自动拉起 18112 认证服务（MySQL 就绪后）"},
+			},
+		},
+
+		Composite{
+
+			Layout: HBox{Margins: Margins{10, 0, 10, 8}, Spacing: 8},
+
+			Children: []Widget{
+
+				PushButton{AssignTo: &a.initBtn, Text: "① 一键初始化", OnClicked: a.onInit},
+
+				PushButton{AssignTo: &a.startBtn, Text: "▶ 一键启动(全部)", OnClicked: a.onStart},
+
+				PushButton{AssignTo: &a.stopBtn, Text: "■ 停止服务", OnClicked: a.onStop},
+
+				PushButton{AssignTo: &a.refreshBtn, Text: "刷新状态", OnClicked: func() { a.refreshNow(true) }},
+
+				PushButton{AssignTo: &a.serverBtn, Text: "服务端预检(Doctor)", OnClicked: a.onDoctor},
+			},
+		},
+
+		Label{Text: "提示：一键启动按顺序执行：拉起 MySQL → 自动初始化（缺 instance.json 时）→ env 直启 DNF90Server → 拉起 18112 认证服务。\r\n       数据库模式固定为 MySQL；公网 IP 打开工具即自动获取，也可点「自动获取」手动刷新。"},
+	}
+
+}
+
+func (a *App) authTab() []Widget {
+
+	return []Widget{
+
+		Composite{
+
+			Layout: Grid{Columns: 2, Margins: Margins{10, 12, 10, 6}, Spacing: 8},
+
+			Children: []Widget{
+
+				Label{Text: "公网监听:"},
+
+				Label{Text: "https" + listenAddrDisplay(a.cfg.Public.ListenAddr)},
+
+				Label{Text: "数据库:"},
+
+				Label{Text: fmt.Sprintf("%s:%d/%s", a.cfg.MySQL.Host, a.cfg.MySQL.Port, a.cfg.MySQL.DBName)},
+
+				Label{Text: "注册模式:"},
+
+				Label{Text: a.cfg.RegistrationMode},
+			},
+		},
+
+		Composite{
+
+			Layout: HBox{Margins: Margins{10, 10, 10, 6}, Spacing: 8},
+
+			Children: []Widget{
+
+				PushButton{AssignTo: &a.authBtn, Text: "启动认证服务", OnClicked: a.onToggleAuth},
+
+				Label{AssignTo: &a.authStateL, Text: "已停止", TextColor: walk.RGB(160, 40, 40)},
+			},
+		},
+
+		Label{Text: "说明：认证服务提供公网 HTTPS 登录/验证 API，供异环登录器使用；服务端通过\r\n       内部 HTTP " + a.cfg.Internal.ListenAddr + " 回调完成票据校验。请先在「一键启动」页启动 DNF90 服务端。"},
+	}
+
+}
+
+// ================= 交互 =================
+
+func (a *App) onBrowseRoot() {
+
+	dlg := new(walk.FileDialog)
+
+	dlg.Title = "选择 DNF90 服务端根目录（含 runtime 与 START.bat）"
+
+	dlg.FilePath = a.rootEdit.Text()
+
+	if ok, err := dlg.ShowBrowseFolder(a.mw); err != nil {
+
+		a.logf("打开目录选择失败: %v", err)
+
+		return
+
+	} else if !ok {
+
+		return
+
+	}
+
+	path := dlg.FilePath
+
+	a.rootEdit.SetText(path)
+
+	a.persistUI()
+
+	a.refreshNow(true)
+
+}
+
+func (a *App) onAutoIP() {
+
+	a.uiSafe(func() { a.refreshBtn.SetEnabled(false) })
+
+	a.runAsync("自动获取公网 IP", func() error {
+
+		ip, err := serverdir.GetPublicIP()
+
+		if err != nil {
+
+			return err
+
+		}
+
+		a.uiSafe(func() {
+
+			a.ipEdit.SetText(ip)
+
+			a.logf("获取到公网 IP: %s", ip)
+
+			a.persistUI()
+
+		})
+
+		return nil
+
+	}, func(err error) {
+
+		if err != nil {
+
+			a.logf("获取公网 IP 失败: %v（请检查网络后重试，或手动填写）", err)
+
+		}
+
+	})
+
+}
+
+func (a *App) onDoctor() {
+
+	root := a.rootEdit.Text()
+
+	if strings.TrimSpace(root) == "" {
+
+		a.logf("请先选择服务端根目录")
+
+		return
+
+	}
+
+	a.persistUI()
+
+	a.runAsync("服务端预检", func() error {
+
+		return serverdir.RunDoctor(root, func(line string) { a.uiSafe(func() { a.logf("%s", line) }) }, 120*time.Second)
+
+	}, func(err error) {
+
+		if err != nil {
+
+			a.logf("预检失败: %v", err)
+
+		}
+
+	})
+
+}
+
+func (a *App) onInit() {
+
+	root := strings.TrimSpace(a.rootEdit.Text())
+
+	if root == "" {
+
+		a.logf("请先选择服务端根目录")
+
+		return
+
+	}
+
+	mode := a.dbMode()
+
+	ins := serverdir.Inspect(root)
+
+	if ins.InstanceExists && ins.InstanceValid && !ins.NeedsInit {
+
+		a.logf("当前目录已初始化（mode=%s），无需重复执行；如需重建请删除 runtime\\config\\instance.json 后重试", ins.DatabaseMode)
+
+		return
+
+	}
+
+	a.persistUI()
+
+	a.runAsync("一键初始化", func() error {
+		if err := serverdir.EnsureDatabaseReady(root, mode, func(line string) {
+			a.uiSafe(func() { a.logf("%s", line) })
+		}, 240*time.Second); err != nil {
+			return err
+		}
+		return serverdir.EnsureRuntimeConfigs(root, func(line string) {
+			a.uiSafe(func() { a.logf("%s", line) })
+		})
+	}, func(err error) {
+
+		if err != nil {
+
+			a.logf("初始化失败: %v", err)
+
+			return
+
+		}
+
+		a.logf("初始化完成，请点击「刷新状态」确认")
+
+	})
+
+}
+
+func (a *App) onStart() {
+
+	root := strings.TrimSpace(a.rootEdit.Text())
+
+	if root == "" {
+
+		a.logf("请先选择服务端根目录")
+
+		return
+
+	}
+
+	a.persistUI()
+
+	// 公网 IP 为空时先补一次自动获取。
+
+	if strings.TrimSpace(a.ipEdit.Text()) == "" {
+
+		a.runAsync("自动获取公网 IP", func() error {
+
+			ip, err := serverdir.GetPublicIP()
+
+			if err != nil {
+
+				return err
+
+			}
+
+			a.uiSafe(func() { a.ipEdit.SetText(ip) })
+
+			return nil
+
+		}, func(err error) {
+
+			if err != nil {
+
+				a.logf("自动获取公网 IP 失败: %v（可先手动填写后再启动）", err)
+
+			}
+
+		})
+
+		time.Sleep(2 * time.Second)
+
+	}
+
+	a.runAsync("一键启动(全部)", func() error {
+
+		// 1) 目录与可执行文件检测。
+
+		ins := serverdir.Inspect(root)
+
+		if !ins.RootExists || !ins.ServerExeExists {
+
+			return fmt.Errorf("服务端目录无效：%s", ins.Message)
+
+		}
+
+		// 2) 若已有服务端进程（非本工具拉起）在跑，先停掉，避免双开。
+
+		if pmRun, _ := a.pm.Status(); pmRun {
+
+			return fmt.Errorf("已有由本工具启动的服务进程，请先点「停止服务」")
+
+		}
+
+		if ins.Running {
+
+			a.logf("检测到服务端已在监听（可能由原版 START.bat 拉起），先停止旧进程...")
+
+			procs, _ := serverdir.ListRootProcesses(root, "DNF90Server.exe", "DNF90Control.exe")
+
+			for _, p := range procs {
+
+				a.logf("停止 %s (pid=%d)", p.Name, p.PID)
+
+				_ = serverdir.KillTree(p.PID, false)
+
+			}
+
+			time.Sleep(2 * time.Second)
+
+		}
+
+		// 3) 拉起 MySQL（固定 mysql 模式；端口未监听则完整初始化并拉起内置便携 MySQL，未携带时回退本机服务）。
+
+		host := strings.TrimSpace(a.cfg.MySQL.Host)
+
+		if host == "" {
+
+			host = "127.0.0.1"
+
+		}
+
+		port := a.cfg.MySQL.Port
+
+		if port <= 0 {
+
+			port = 13306
+
+		}
+
+		if serverdir.ProbePort(host, port, 500*time.Millisecond) {
+
+			a.logf("MySQL 已就绪: %s:%d", host, port)
+
+		} else {
+
+			a.logf("MySQL %s:%d 未监听，正在完整初始化并拉起 MySQL（内置便携优先，未携带则回退本机服务）...", host, port)
+
+			if err := serverdir.EnsureDatabaseReady(root, "mysql", func(line string) {
+
+				a.uiSafe(func() { a.logf("%s", line) })
+
+			}, 240*time.Second); err != nil {
+
+				return fmt.Errorf("MySQL 初始化/启动失败: %v", err)
+
+			}
+
+		}
+
+		// 4) 复查：instance/MySQL 数据仍未就绪时自动补齐（MySQL 模式）。
+
+		ins = serverdir.Inspect(root)
+
+		if ins.NeedsInit || !ins.InstanceValid {
+
+			a.logf("检测到初始化不完整（%s），自动补齐...", ins.Message)
+
+			if err := serverdir.EnsureDatabaseReady(root, "mysql", func(line string) {
+
+				a.uiSafe(func() { a.logf("%s", line) })
+
+			}, 240*time.Second); err != nil {
+
+				return fmt.Errorf("自动初始化失败: %v", err)
+
+			}
+
+			ins = serverdir.Inspect(root)
+
+			if ins.NeedsInit || !ins.InstanceValid {
+
+				return fmt.Errorf("初始化后仍未就绪: %s", ins.Message)
+
+			}
+
+		}
+
+		// 4.1) 补齐运行配置（dnfbridge.toml / logic.toml / plan.json / channel_info.etc），幂等可重复执行。
+		if err := serverdir.EnsureRuntimeConfigs(root, func(line string) {
+			a.uiSafe(func() { a.logf("%s", line) })
+		}); err != nil {
+			return fmt.Errorf("生成运行配置失败: %v", err)
+		}
+
+		// 5) env 直启 DNF90Server。
+
+		exe := filepath.Join(root, "runtime", "bin", "DNF90Server.exe")
+
+		if !serverdir.FileExists(exe) {
+
+			return fmt.Errorf("找不到 DNF90Server.exe: %s", exe)
+
+		}
+
+		workDir := filepath.Join(root, "runtime")
+
+		publicIP := strings.TrimSpace(a.ipEdit.Text())
+
+		if ins.Instance != nil && ins.Instance.AdvertiseIP != "" && publicIP != "" && serverdir.IsPrivateIP(ins.Instance.AdvertiseIP) {
+
+			a.logf("提示: instance 下发地址 %q 为私网/自动，启动前将改写 dnfbridge public_addr 并注入 DNFBRIDGE_SERVER_IP=%s 双保险", ins.Instance.AdvertiseIP, publicIP)
+
+		}
+
+		if publicIP == "" {
+
+			a.logf("警告: 公网 IP 为空，玩家可能连不上；请点「自动获取」或手动填写")
+
+		} else {
+
+			// 5.1) 将公网 IP 直接改写进 dnfbridge.toml 的 [service].public_addr（保留端口），原文件首次改写前备份为 .bak。
+
+			if addr, err := serverdir.WritePublicAddr(root, publicIP); err != nil {
+
+				a.logf("改写 public_addr 失败（不影响 env 注入启动，稍后可手动处理）: %v", err)
+
+			} else {
+
+				a.logf("已将 dnfbridge.toml [service].public_addr 改写为 %s（原文件已备份为 dnfbridge.toml.bak）", addr)
+
+			}
+
+		}
+
+		// DNFBRIDGE_CHANNEL_LISTEN 沿用 instance.json 的 channelListen（默认 127.0.0.1:port）。
+		channelListen := ""
+		if ins.Instance != nil {
+			channelListen = ins.Instance.ChannelListen
+		}
+
+		env := append(ops.DNFBridgeEnv(a.cfg),
+			"DNFBRIDGE_SERVER_IP="+publicIP,
+			// game 端口段绑内网 IP（勿绑公网 IP：云主机网卡无公网地址，bind 会失败/不可达，即昨日断连问题）。
+			"DNFBRIDGE_GAME_LISTEN_HOST="+serverdir.DetectPrivateIPv4(),
+			"DNFBRIDGE_CHANNEL_LISTEN="+channelListen)
+
+		env = append(env, instanceEnv(ins.Instance)...)
+
+		a.logf("正在直启 DNF90Server.exe -config configs/dnfbridge.toml（工作目录 runtime，注入 env 直启，不调 control start）...")
+
+		if err := a.pm.StartWithEnv(exe, workDir, []string{"-config", "configs/dnfbridge.toml"}, env); err != nil {
+
+			return err
+
+		}
+
+		// 6) 等待频道口就绪。
+
+		port2 := ins.ChannelPort
+
+		if port2 <= 0 {
+
+			port2 = 7001
+
+		}
+
+		deadline := time.Now().Add(60 * time.Second)
+
+		for time.Now().Before(deadline) {
+
+			if serverdir.ProbePort("127.0.0.1", port2, 500*time.Millisecond) {
+
+				a.logf("服务端频道口 %d 已就绪，启动完成", port2)
+
+				break
+
+			}
+
+			time.Sleep(1 * time.Second)
+
+		}
+
+		if !serverdir.ProbePort("127.0.0.1", port2, 500*time.Millisecond) {
+
+			a.logf("60 秒内频道口 %d 未开放，请结合上方日志检查（首次启动可能仍在初始化数据库）", port2)
+
+		}
+
+		// 7) 联动拉起 18112 认证服务（一键启动=启动所有）。
+
+		if !a.svcOn {
+
+			a.logf("正在联动启动认证服务（HTTPS %s）...", listenAddrDisplay(a.cfg.Public.ListenAddr))
+
+			if err := a.startAuth(); err != nil {
+
+				a.logf("认证服务启动失败: %v（不影响服务端运行，可到「认证服务」页重试）", err)
+
+			} else {
+
+				a.logf("认证服务已启动")
+
+			}
+
+		}
+
+		return nil
+
+	}, func(err error) {
+
+		if err != nil {
+
+			a.logf("一键启动失败: %v", err)
+
+		}
+
+	})
+
+}
+
+func (a *App) onStop() {
+
+	root := strings.TrimSpace(a.rootEdit.Text())
+
+	a.persistUI()
+
+	a.runAsync("停止服务", func() error {
+
+		var firstErr error
+
+		// 先停 18112 认证服务。
+
+		if a.svcOn {
+
+			a.logf("停止认证服务...")
+
+			if err := a.stopAuth(); err != nil {
+
+				firstErr = err
+
+			}
+
+		}
+
+		// 再停 DNF90 服务端。
+
+		serverStopped := false
+
+		if pmRun, pid := a.pm.Status(); pmRun {
+
+			a.logf("停止本工具启动的服务进程（pid=%d）...", pid)
+
+			if err := a.pm.Stop(5 * time.Second); err != nil {
+
+				a.logf("停止失败，尝试强制结束: %v", err)
+
+				a.pm.Kill()
+
+			}
+
+			serverStopped = true
+
+		} else if root != "" {
+
+			procs, err := serverdir.ListRootProcesses(root, "DNF90Server.exe", "DNF90Control.exe")
+
+			if err == nil && len(procs) > 0 {
+
+				for _, p := range procs {
+
+					a.logf("发现 %s (pid=%d, %s)，正在停止...", p.Name, p.PID, p.ExecutablePath)
+
+					_ = serverdir.KillTree(p.PID, false)
+
+				}
+
+				time.Sleep(2 * time.Second)
+
+				for _, p := range procs {
+
+					if procAlive(p.PID) {
+
+						_ = serverdir.KillTree(p.PID, true)
+
+						a.logf("已强制结束 pid=%d", p.PID)
+
+					}
+
+				}
+
+				serverStopped = true
+
+			}
+
+		}
+
+		// 最后停便携 MySQL（一键停止 = 停止所有）。
+
+		if root != "" {
+
+			mys, err := serverdir.ListRootProcesses(root, "mysqld.exe")
+
+			if err == nil && len(mys) > 0 {
+
+				for _, p := range mys {
+
+					a.logf("停止便携 MySQL %s (pid=%d)...", p.Name, p.PID)
+
+					_ = serverdir.KillTree(p.PID, false)
+
+				}
+
+				time.Sleep(3 * time.Second)
+
+				for _, p := range mys {
+
+					if procAlive(p.PID) {
+
+						_ = serverdir.KillTree(p.PID, true)
+
+						a.logf("MySQL 未退出，已强制结束 pid=%d", p.PID)
+
+					}
+
+				}
+
+			}
+
+		}
+
+		if !serverStopped {
+
+			if firstErr != nil {
+
+				return firstErr
+
+			}
+
+			return fmt.Errorf("未发现正在运行的 DNF90 服务端（本工具未启动它，且目录内无匹配进程）")
+
+		}
+
+		return firstErr
+
+	}, func(err error) {
+
+		if err != nil {
+
+			a.logf("停止失败: %v", err)
+
+		}
+
+	})
+
+}
+
+func (a *App) onToggleAuth() {
+
+	a.persistUI()
+
+	if a.svcOn {
+
+		a.runAsync("停止认证服务", func() error {
+
+			return a.stopAuth()
+
+		}, func(err error) {
+
+			if err != nil {
+
+				a.logf("停止认证服务失败: %v", err)
+
+			}
+
+		})
+
+		return
+
+	}
+
+	a.runAsync("启动认证服务", func() error {
+
+		if err := a.startAuth(); err != nil {
+
+			return err
+
+		}
+
+		a.logf("认证服务已启动（公网 HTTPS :%s）", a.cfg.Public.ListenAddr)
+
+		return nil
+
+	}, func(err error) {
+
+		if err != nil {
+
+			a.logf("启动认证服务失败: %v", err)
+
+		}
+
+	})
+
+}
+
+// mysqlFromInstance 实时从服务端 runtime\config\instance.json 读取 MySQL 凭据。
+
+// 未初始化（instance.json 缺失或没有 database 段）时返回错误，引导先执行初始化，
+
+// 避免用 config.json 的静态空密码去连库。
+
+func (a *App) mysqlFromInstance() (config.MySQLConfig, error) {
+
+	root := strings.TrimSpace(a.rootEdit.Text())
+
+	if root == "" {
+
+		root = strings.TrimSpace(a.cfg.ServerRoot)
+
+	}
+
+	if root == "" {
+
+		return config.MySQLConfig{}, fmt.Errorf("未选择服务端目录")
+
+	}
+
+	ins := serverdir.Inspect(root)
+
+	if ins == nil || ins.Instance == nil || ins.Instance.DBName == "" {
+
+		return config.MySQLConfig{}, fmt.Errorf("服务端数据库未初始化（runtime\\config\\instance.json 缺失或缺少 database 段），请先执行「一键启动」完成初始化后再启动认证服务")
+
+	}
+
+	it := ins.Instance
+
+	mcfg := config.MySQLConfig{
+
+		Host: it.DBHost,
+
+		Port: it.DBPort,
+
+		User: it.DBUser,
+
+		Password: it.DBPassword,
+
+		DBName: it.DBName,
+	}
+
+	// 个别字段缺失时回退默认/静态配置，保证兼容。
+
+	if mcfg.Host == "" {
+
+		mcfg.Host = a.cfg.MySQL.Host
+
+	}
+
+	if mcfg.Port <= 0 {
+
+		mcfg.Port = a.cfg.MySQL.Port
+
+	}
+
+	if mcfg.User == "" {
+
+		mcfg.User = a.cfg.MySQL.User
+
+	}
+
+	if mcfg.Password == "" {
+
+		mcfg.Password = a.cfg.MySQL.Password
+
+	}
+
+	if mcfg.DBName == "" {
+
+		mcfg.DBName = a.cfg.MySQL.DBName
+
+	}
+
+	if mcfg.Host == "" {
+
+		mcfg.Host = "127.0.0.1"
+
+	}
+
+	if mcfg.Port <= 0 {
+
+		mcfg.Port = 13306
+
+	}
+
+	if mcfg.User == "" {
+
+		mcfg.User = "root"
+
+	}
+
+	if mcfg.DBName == "" {
+
+		mcfg.DBName = "dnf_local"
+
+	}
+
+	return mcfg, nil
+
+}
+
+// startAuth 启动认证服务（依赖 MySQL；凭据实时取 instance.json）。
+
+func (a *App) startAuth() error {
+
+	mcfg, err := a.mysqlFromInstance()
+
+	if err != nil {
+
+		return err
+
+	}
+
+	st, err := store.Open(mcfg)
+
+	if err != nil {
+
+		return fmt.Errorf("连接 MySQL(%s:%d) 失败: %w；请确认服务端数据库已就绪", mcfg.Host, mcfg.Port, err)
+
+	}
+
+	svc := server.New(a.cfg, st, slog.Default(), func() bool { return ops.GameUp(a.cfg) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	if err := svc.Start(ctx); err != nil {
+
+		cancel()
+
+		st.Close()
+
+		return err
+
+	}
+
+	a.svcCancel = cancel
+
+	a.svc = svc
+
+	a.st = st
+
+	a.svcOn = true
+
+	a.updateAuthUI()
+
+	return nil
+
+}
+
+// stopAuth 停止认证服务。
+
+func (a *App) stopAuth() error {
+
+	var firstErr error
+
+	if a.svc != nil {
+
+		if err := a.svc.Stop(context.Background()); err != nil {
+
+			firstErr = err
+
+		}
+
+		if a.svcCancel != nil {
+
+			a.svcCancel()
+
+			a.svcCancel = nil
+
+		}
+
+		a.svc = nil
+
+	}
+
+	if a.st != nil {
+
+		_ = a.st.Close()
+
+		a.st = nil
+
+	}
+
+	a.svcOn = false
+
+	a.updateAuthUI()
+
+	return firstErr
+
+}
+
+func (a *App) updateAuthUI() {
+
+	a.uiSafe(func() {
+
+		if a.authStateL == nil {
+
+			return
+
+		}
+
+		if a.svcOn {
+
+			a.authStateL.SetText("运行中")
+
+			a.authStateL.SetTextColor(walk.RGB(32, 130, 32))
+
+			if a.authBtn != nil {
+
+				a.authBtn.SetText("停止认证服务")
+
+			}
+
+		} else {
+
+			a.authStateL.SetText("已停止")
+
+			a.authStateL.SetTextColor(walk.RGB(160, 40, 40))
+
+			if a.authBtn != nil {
+
+				a.authBtn.SetText("启动认证服务")
+
+			}
+
+		}
+
+	})
+
+}
+
+// ================= 状态刷新 =================
+
+func (a *App) refreshNow(verbose bool) {
+
+	if a.busy {
+
+		return
+
+	}
+
+	root := strings.TrimSpace(a.rootEdit.Text())
+
+	a.busy = true
+
+	if verbose {
+
+		a.logf("正在检测: %s", root)
+
+	}
+
+	go func() {
+
+		defer func() { a.busy = false }()
+
+		ins := serverdir.Inspect(root)
+
+		pmRun, pid := a.pm.Status()
+
+		a.uiSafe(func() {
+
+			if ins.Running && a.lastRunning {
+
+				// 运行中稳定态，颜色高亮
+
+				a.statusL.SetTextColor(walk.RGB(180, 90, 20))
+
+			} else if ins.Running || pmRun {
+
+				a.statusL.SetTextColor(walk.RGB(32, 130, 32))
+
+			} else {
+
+				a.statusL.SetTextColor(walk.RGB(90, 90, 90))
+
+			}
+
+			if root == "" {
+
+				a.statusL.SetText("未选择服务端目录")
+
+			} else if pmRun {
+
+				a.statusL.SetText(fmt.Sprintf("运行中（本工具 pid=%d）· %s", pid, ins.Message))
+
+			} else {
+
+				a.statusL.SetText(ins.Message)
+
+			}
+
+			a.updateButtons(ins, pmRun)
+
+		})
+
+		if verbose {
+
+			a.uiSafe(func() {
+
+				a.logf("检测结果: %s", ins.Message)
+
+			})
+
+		}
+
+	}()
+
+}
+
+func (a *App) updateButtons(ins *serverdir.Inspection, pmRun bool) {
+
+	enabled := !a.busy
+
+	rootOK := ins != nil && ins.RootExists
+
+	needInit := ins != nil && ins.NeedsInit
+
+	canStart := enabled && rootOK && !needInit && ins != nil && ins.Ready && !ins.Running && !pmRun
+
+	canStop := enabled && (pmRun || (ins != nil && ins.Running))
+
+	a.initBtn.SetEnabled(enabled && rootOK && (needInit || ins.InstanceValid))
+
+	a.startBtn.SetEnabled(canStart)
+
+	a.stopBtn.SetEnabled(canStop)
+
+	a.refreshBtn.SetEnabled(enabled)
+
+	a.serverBtn.SetEnabled(enabled && rootOK)
+
+}
+
+func (a *App) loopRefresh() {
+
+	tick := time.NewTicker(3 * time.Second)
+
+	defer tick.Stop()
+
+	for range tick.C {
+
+		if a.mw == nil {
+
+			continue
+
+		}
+
+		a.refreshNow(false)
+
+		// 认证服务运行中：后台自动刷新封禁页在线列表（服务停止后自然跳过）
+		if a.svcOn && a.st != nil && banWidgets.onlineTable != nil {
+			go func() { _ = a.loadOnline() }()
+		}
+
+	}
+
+}
+
+// ================= 工具 =================
+
+// dbMode 数据库模式固定为 MySQL（不再提供选择）。
+
+func (a *App) dbMode() string {
+
+	return "mysql"
+
+}
+
+// persistUI 把 UI 值写回 config 并保存。
+
+func (a *App) persistUI() {
+
+	if a.cfg == nil {
+
+		return
+
+	}
+
+	a.cfg.ServerRoot = strings.TrimSpace(a.rootEdit.Text())
+
+	a.cfg.DatabaseMode = a.dbMode()
+
+	a.cfg.PublicIP = strings.TrimSpace(a.ipEdit.Text())
+
+	// 选择服务端目录后自动推导 dnfbridge executable/working_dir（兼容旧联动入口）。
+
+	if a.cfg.ServerRoot != "" {
+
+		derived := filepath.Join(a.cfg.ServerRoot, "runtime", "bin", "DNF90Server.exe")
+
+		if a.cfg.DNFBridge.Executable == "" || strings.Contains(strings.ToLower(a.cfg.DNFBridge.Executable), "dnf90server.exe") {
+
+			a.cfg.DNFBridge.Executable = derived
+
+			a.cfg.DNFBridge.WorkingDir = filepath.Join(a.cfg.ServerRoot, "runtime")
+
+		}
+
+	}
+
+	if err := a.cfg.Save(); err != nil {
+
+		a.logf("保存配置失败: %v", err)
+
+	}
+
+}
+
+// runAsync 后台任务：加 busy、禁用 UI、执行 fn、完成后回调 finish（均在主线程回调 finish）。
+
+func (a *App) runAsync(label string, fn func() error, finish func(err error)) {
+
+	if a.busy {
+
+		a.logf("已有任务进行中，请稍候")
+
+		return
+
+	}
+
+	a.busy = true
+
+	a.uiSafe(func() {
+
+		a.statusL.SetText("执行中: " + label + " ...")
+
+		a.refreshBtn.SetEnabled(false)
+
+		a.initBtn.SetEnabled(false)
+
+		a.startBtn.SetEnabled(false)
+
+		a.stopBtn.SetEnabled(false)
+
+		a.serverBtn.SetEnabled(false)
+
+	})
+
+	go func() {
+
+		err := fn()
+
+		a.uiSafe(func() {
+
+			a.busy = false
+
+			a.statusL.SetText("执行完成: " + label)
+
+			if finish != nil {
+
+				finish(err)
+
+			}
+
+			a.refreshNow(false)
+
+		})
+
+	}()
+
+}
+
+// instanceEnv 从 instance.json 派生 dnfbridge 直启所需的完整运行环境，
+
+// 覆盖 gameUpperHeader / gameOuterToken / party UDP 等仅存在 instance.json 的字段。
+
+func instanceEnv(ins *serverdir.InstanceInfo) []string {
+
+	if ins == nil {
+
+		return nil
+
+	}
+
+	b := func(v bool) string { return strconv.FormatBool(v) }
+
+	i := func(v int) string { return strconv.Itoa(v) }
+
+	return []string{
+
+		"DNFBRIDGE_GAME_UPPER_HEADER=" + ins.GameUpperHeader,
+
+		"DNFBRIDGE_GAME_UPPER_BODY_CODEC=" + ins.GameUpperBodyCodec,
+
+		"DNFBRIDGE_GAME_UPPER_CLIENT_BODY_CODEC=" + ins.GameUpperClientBodyCodec,
+
+		"DNFBRIDGE_GAME_OUTER_TOKEN=" + ins.GameOuterToken,
+
+		"DNFBRIDGE_DPROTO_MODE=legacy_patch",
+
+		"DNFBRIDGE_CHANNEL_SERVER_INDEX=" + i(ins.ChannelServerIndex),
+
+		"DNFBRIDGE_CHANNEL_ADVERTISE_SERVER_INDEX=" + i(ins.ChannelAdvertiseIndex),
+
+		"DNFBRIDGE_REGION_ID=" + i(ins.RegionID),
+
+		"DNFBRIDGE_PARTY_UDP_RELAY_ENABLED=" + b(ins.PartyUDPRelayEnabled),
+
+		"DNFBRIDGE_PARTY_UDP_RELAY_PORT_START=" + i(ins.PartyUDPRelayPortStart),
+
+		"DNFBRIDGE_PARTY_UDP_RELAY_PORT_COUNT=" + i(ins.PartyUDPRelayPortCount),
+
+		"DNFBRIDGE_PVF_PATH=" + ins.PVFPath,
+
+		"DNFBRIDGE_CHANNEL_INFO_PATH=" + ins.ChannelInfoPath,
+
+		"DNFBRIDGE_CHANNEL_INFO_BODY_MODE=latest",
+
+		"DNFBRIDGE_DUNGEON_BATCH_PICKUP_ENABLED=" + b(ins.DungeonBatchPickupEnabled),
+
+		"DNFBRIDGE_ACCOUNT_ID=" + ins.AccountID,
+
+		"DNFBRIDGE_PACKET_LOG=" + b(ins.PacketLog),
+
+		"DNFBRIDGE_DEBUG_MODE=" + b(ins.DebugMode),
+
+		"DNFBRIDGE_DEBUG_STRIKE_ON_SKILL_USE=" + b(ins.DebugStrikeOnSkillUse),
+
+		"DNFBRIDGE_ROBOT_ENABLED=" + b(ins.RobotEnabled),
+
+		// 固定项（对齐原版 DNF90Control runtimeEnvironment；logic 配置入口 + 引导模式）。
+		"LONGHENG_DNF_CONFIG=configs/dnf/logic.toml",
+		"DNFBRIDGE_GAME_INITIAL_MODE=notice",
+		"DNFBRIDGE_GAME_PRE_BOOTSTRAP=none",
+		"DNFBRIDGE_GAME_POST_BOOTSTRAP=none",
+		"DNFBRIDGE_PACKET_LOG_PATH=logs/packet_log.txt",
+		"DNF_SCRIPT_VERSION=61",
+	}
+
+}
+
+// mysqlPortOf 取 portable MySQL 端口（instance.json 缺失时用 13306）。
+
+func mysqlPortOf(root string, ins *serverdir.Inspection) string {
+
+	return "13306"
+
+}
+
+// listenAddrDisplay 将 ":18112" 展示为 "0.0.0.0:18112"。
+
+func listenAddrDisplay(addr string) string {
+
+	addr = strings.TrimSpace(addr)
+
+	if strings.HasPrefix(addr, ":") {
+
+		return "0.0.0.0" + addr
+
+	}
+
+	return addr
+
+}
+
+// autoPublicIP 打开工具后自动获取公网 IP 并回填、持久化（不阻塞 UI）。
+
+func (a *App) autoPublicIP() {
+
+	if a.cfg == nil || a.ipEdit == nil {
+
+		return
+
+	}
+
+	go func() {
+
+		ip, err := serverdir.GetPublicIP()
+
+		if err != nil {
+
+			a.uiSafe(func() {
+
+				if strings.TrimSpace(a.ipEdit.Text()) == "" {
+
+					a.logf("自动获取公网 IP 失败: %v（可稍后点「自动获取」重试）", err)
+
+				}
+
+			})
+
+			return
+
+		}
+
+		a.uiSafe(func() {
+
+			a.ipEdit.SetText(ip)
+
+			a.logf("已自动获取公网 IP: %s", ip)
+
+		})
+
+		a.cfg.PublicIP = ip
+
+		_ = a.cfg.Save()
+
+	}()
+
+}
+
+// procAlive 简单判断 PID 存活（tasklist）。
+
+func procAlive(pid int) bool {
+
+	cmd := exec.Command("tasklist", "/FI", "PID eq "+fmt.Sprint(pid), "/NH")
+
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+
+	out, err := cmd.Output()
+
+	if err != nil {
+
+		return false
+
+	}
+
+	return strings.Contains(string(out), fmt.Sprint(pid))
+
+}

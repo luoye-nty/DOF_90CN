@@ -1,0 +1,37 @@
+﻿stackable/490001001/chn_490001355.stk: `使用后， 可以提升强化成功率， 效果持续30分钟。`
+stackable/490001001/chn_490001358.stk: `使用后， 可以提升强化成功率， 效果持续30分钟。`
+stackable/490001001/chn_490001497.stk: `使用后， 可以提高一定的强化成功率， 效果持续30分钟。`
+stackable/490002001/chn_490002394.stk: `使用后， 30分钟内可以增加强化成功率。`
+stackable/490004001/490004594.stk: `使用后， 可以提升强化成功率， 效果持续30分钟。`
+stackable/490004001/chn_490004594.stk: `使用后， 可以提升强化成功率， 效果持续30分钟。`
+stackable/490006001/chn_490006368.stk: `使用后， 可以提升强化成功率， 效果持续30分钟。`
+stackable/490007001/chn_490007876.stk: `    使用后， 增加强化成功率， 效果持续10分钟。`
+stackable/490007001/chn_490007878.stk: `    使用后， 可以提升强化成功率， 效果持续30分钟。`
+stackable/490008001/chn_490008465.stk: `    使用后， 可以提升强化成功率， 效果持续30分钟。`
+stackable/cash/chn_20141111_sao_package/crystallight_10007343.stk: `使用后， 强化成功率增加10%%， 效果持续30秒。 (冷却时间为60秒)`
+stackable/cash/chn_20151022_randombox_buff_potion/chn_2015_reinforce_success_buff_potion_10008220.stk: `使用后， 可以获得强化成功率提升Buff， 效果持续10分钟。
+stackable/cash/chn_490700169.stk: `开启后， 可以从拥有30%%~90%%强化成功率的+11 装备强化券或+12 装备强化券中随机获得1种。 获得的装备强化券可以交易。`
+stackable/cash/chn_490700170.stk: `开启后， 可以从拥有10%%~90%%强化成功率的+11 装备强化券或+12 装备强化券中随机获得1种。 获得的装备强化券可以交易。`
+stackable/cash/chn_490700675.stk: `开启后， 可以从拥有30%%~90%%强化成功率的+11 装备强化券或+12 装备强化券中随机获得1种。 获得的装备强化券可以交易。`
+stackable/cash/chn_490700676.stk: `开启后， 可以从拥有10%%~90%%强化成功率的+11 装备强化券或+12 装备强化券中随机获得1种。 获得的装备强化券可以交易。`
+stackable/cash/chn_high_upgrade/chn_high_upgrade.stk: `使用高级炉岩炭时的强化成功率为普通炉岩炭的110%%`
+stackable/ect/chn_random/chn_20150115_randombox_item/chn_20151229_goalgo_ryan_box_10008499.stk: `开启后， 可以从拥有10%%~90%%强化成功率的+11 装备强化券或+12 装备强化券中随机获得1种。 获得的装备强化券可以交易。`
+stackable/ect/chn_random/chn_20150115_randombox_item/chn_20151229_sheave_box_10008498.stk: `开启后， 可以从拥有30%%~90%%强化成功率的+11 装备强化券或+12 装备强化券中随机获得1种。 获得的装备强化券可以交易。`
+stackable/event/chn_event_20140617_phoenix_weapon/chn_phoenix_weapon_10003674.stk: `可以强化不死鸟武器的强化器， 强化成功率与普通的强化器相同。 (该道具为一次性道具)`
+stackable/event/chn_event_20151008_enchant_event/chn_enchant_10006268.stk: `使用后， 可以提高一定的强化成功率， 效果持续30分钟。`
+stackable/event/chn_event_2015_returnhero/chn_up_bag_10005208.stk: `开启后， 可以从 +10~+12强化券中随机获得1种， 强化券的强化成功率为30%%~80%%。`
+stackable/event/vendingmachine/chn_secret_reinforcement.stk: `使用后， 可以提升强化成功率， 效果持续30分钟。`
+stackable/event/vendingmachine/fortuneaura_success.stk: `在该频道中， 增加10%%的强化成功率， 效果持续60分钟。`
+stackable/professional/potion/secret_reinforcement.stk: `使用后， 可以提升强化成功率， 效果持续30分钟。`
+stackable/cash/chn_490702184.stk: `    开启后， 可以从拥有30%%~90%%增幅成功率的+10 装备增幅券或+11 装备增幅券中随机获得1种。 获得的装备增幅券可以交易。`
+stackable/cash/chn_490702185.stk: `    开启后， 可以从拥有10%%~90%%增幅成功率的+10 装备增幅券或+11 装备增幅券中随机获得1种。 获得的装备增幅券可以交易。`
+stackable/cash/chn_490702250.stk: `    开启后， 可以从拥有30%%~90%%增幅成功率的+10 装备增幅券或+11 装备增幅券中随机获得1种。 获得的装备增幅券可以交易。`
+stackable/cash/chn_490702251.stk: `    开启后， 可以从拥有10%%~90%%增幅成功率的+10 装备增幅券或+11 装备增幅券中随机获得1种。 获得的装备增幅券可以交易。`
+stackable/490001001/chn_490001534.stk: `永恒的增幅的秘密`
+stackable/490001001/chn_490001355.stk: `强化秘药`
+stackable/490001001/chn_490001358.stk: `强化秘药`
+stackable/490004001/490004594.stk: `强化秘药`
+stackable/490004001/chn_490004594.stk: `强化秘药`
+stackable/event/chn_event_20131029_dnf_friend/chn_property_attack_10002454.stk: `属性强化秘药`
+stackable/event/vendingmachine/chn_secret_reinforcement.stk: `强化秘药`
+stackable/professional/potion/secret_reinforcement.stk: `强化秘药`

@@ -1,0 +1,22 @@
+[Unit]
+Description=DNF90 Game Server (dnfbridge: 7001 + 频道端口 10000+)
+After=network-online.target mysql.service dnf90auth.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/dnf90/runtime
+EnvironmentFile=/opt/dnf90/conf/server.env
+ExecStart=/opt/dnf90/bin/dnf90server -config configs/dnfbridge.toml
+Restart=always
+RestartSec=5
+# 大批玩家并发连接需要较大句柄上限
+LimitNOFILE=65535
+# 读 PVF 首次装载稍慢
+TimeoutStartSec=180
+StandardOutput=append:/opt/dnf90/logs/dnf90server.log
+StandardError=append:/opt/dnf90/logs/dnf90server.log
+
+[Install]
+WantedBy=multi-user.target

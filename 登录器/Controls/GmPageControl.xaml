@@ -1,0 +1,705 @@
+<UserControl x:Class="DNFLogin.Gm.GmPageControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             Background="Transparent">
+    <UserControl.Resources>
+        <Style x:Key="GmLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#E6FFFFFF" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+        <Style x:Key="GmBox" TargetType="TextBox">
+            <Setter Property="Foreground" Value="#FFE8E8EE" />
+            <Setter Property="Background" Value="#FF191A1F" />
+            <Setter Property="BorderBrush" Value="#FF2A2B31" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="CaretBrush" Value="White" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#FFFF6A5A" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="GmPasswordBox" TargetType="PasswordBox">
+            <Setter Property="Foreground" Value="#FFE8E8EE" />
+            <Setter Property="Background" Value="#FF191A1F" />
+            <Setter Property="BorderBrush" Value="#FF2A2B31" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="CaretBrush" Value="White" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="PasswordBox">
+                        <Border x:Name="bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#FFFF6A5A" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="GmCombo" TargetType="ComboBox">
+            <Setter Property="Foreground" Value="#FFE8E8EE" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="Toggle"
+                                          Focusable="False"
+                                          ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="Bd"
+                                                Background="#FF191A1F"
+                                                BorderBrush="#FF2A2B31"
+                                                BorderThickness="1"
+                                                CornerRadius="8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="22" />
+                                                </Grid.ColumnDefinitions>
+                                                <Path Grid.Column="1"
+                                                      Data="M 0 0 L 4 4 L 8 0"
+                                                      Stroke="#99FFFFFF"
+                                                      StrokeThickness="1.5"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bd" Property="BorderBrush" Value="#FFFF6A5A" />
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Bd" Property="BorderBrush" Value="#FFE84A3A" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter x:Name="ContentSite"
+                                              Margin="10,0,28,0"
+                                              HorizontalAlignment="Left"
+                                              VerticalAlignment="Center"
+                                              IsHitTestVisible="False"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" />
+                            <Popup x:Name="PART_Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Slide">
+                                <Border Background="#FF191A1F"
+                                        BorderBrush="#FF2A2B31"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        MinWidth="{TemplateBinding ActualWidth}"
+                                        Margin="0,4,0,0">
+                                    <ScrollViewer MaxHeight="220">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ComboBoxItem">
+                        <Setter Property="Foreground" Value="#FFE8E8EE" />
+                        <Setter Property="Padding" Value="10,6" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ComboBoxItem">
+                                    <Border x:Name="Bd"
+                                            Background="Transparent"
+                                            CornerRadius="4"
+                                            Margin="2"
+                                            Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsHighlighted" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="#12E84A3A" />
+                                            <Setter Property="Foreground" Value="#FFFFFFFF" />
+                                        </Trigger>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter Property="Foreground" Value="#FFFF7A6A" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="GmButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#FFFFFFFF" />
+            <Setter Property="Background" Value="#FFE84A3A" />
+            <Setter Property="BorderBrush" Value="#FFE84A3A" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Padding" Value="14,5" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.55" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.75" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="GmDangerButton" TargetType="Button" BasedOn="{StaticResource GmButton}">
+            <Setter Property="Background" Value="#FFB8433F" />
+            <Setter Property="BorderBrush" Value="#FF8F322F" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.55" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.75" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="GmSectionTitle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#E6FFFFFF" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,10,0,6" />
+        </Style>
+        <Style x:Key="GmList" TargetType="ListView">
+            <Setter Property="Foreground" Value="#FFE8E8EE" />
+            <Setter Property="Background" Value="#FF191A1F" />
+            <Setter Property="BorderBrush" Value="#FF2A2B31" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontSize" Value="12.5" />
+        </Style>
+        <Style x:Key="GmStatus" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FF9A9AAB" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="TabItemDark" TargetType="TabItem">
+            <Setter Property="Foreground" Value="#E6FFFFFF" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="bd" Background="Transparent" BorderThickness="0,0,0,2"
+                                BorderBrush="Transparent" Padding="14,8">
+                            <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#FFE84A3A" />
+                                <Setter Property="Foreground" Value="#FFFFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#FF1D1E24" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ListViewItemDark" TargetType="ListViewItem">
+            <Setter Property="Foreground" Value="#FFE8E8EE" />
+            <Setter Property="Padding" Value="4,2" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListViewItem">
+                        <Border x:Name="bd" Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <GridViewRowPresenter Content="{TemplateBinding Content}"
+                                                  Columns="{TemplateBinding GridView.ColumnCollection}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#26E84A3A" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#FF1D1E24" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Background="#FF181820">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 顶栏 -->
+        <Border Grid.Row="0" Background="#FF14141B" BorderBrush="#FF2A2A34" BorderThickness="0,0,0,1" Padding="16,10">
+            <DockPanel>
+                <TextBlock Text="GM 工具" FontSize="18" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center" />
+                <TextBlock x:Name="StatusBar" Style="{StaticResource GmStatus}" Margin="16,0,0,0"
+                           VerticalAlignment="Center" Text="就绪" DockPanel.Dock="Right" />
+            </DockPanel>
+        </Border>
+
+        <!-- Tab 区 -->
+        <TabControl Grid.Row="1" Background="Transparent" BorderThickness="0"
+                    Padding="0" Margin="0">
+            <TabControl.Resources>
+                <Style TargetType="TabPanel">
+                    <Setter Property="Background" Value="#FF14141B" />
+                </Style>
+            </TabControl.Resources>
+
+            <!-- ══ 角色管理 ══ -->
+            <TabItem Header="角色管理" Style="{StaticResource TabItemDark}">
+                <Grid Margin="14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <TextBlock Style="{StaticResource GmLabel}" Text="查询方式：" />
+                        <ComboBox x:Name="QueryTypeCombo" Style="{StaticResource GmCombo}" Width="90" SelectedIndex="1">
+                            <ComboBoxItem Content="账号" />
+                            <ComboBoxItem Content="角色名" />
+                        </ComboBox>
+                        <TextBox x:Name="QueryInput" Style="{StaticResource GmBox}" Width="220" Margin="8,0,0,0" />
+                        <Button x:Name="QueryBtn" Style="{StaticResource GmButton}" Content="查询" Margin="8,0,0,0" Click="QueryBtn_Click" />
+                    </StackPanel>
+
+                    <ListView x:Name="CharList" Grid.Row="1" Style="{StaticResource GmList}"
+                              ItemContainerStyle="{StaticResource ListViewItemDark}"
+                              SelectionChanged="CharList_SelectionChanged">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="角色ID" Width="120" DisplayMemberBinding="{Binding CharacterID}" />
+                                <GridViewColumn Header="角色名" Width="110" DisplayMemberBinding="{Binding Name}" />
+                                <GridViewColumn Header="账号ID" Width="140" DisplayMemberBinding="{Binding AccountID}" />
+                                <GridViewColumn Header="等级" Width="55" DisplayMemberBinding="{Binding Level}" />
+                                <GridViewColumn Header="金币" Width="90" DisplayMemberBinding="{Binding Gold}" />
+                                <GridViewColumn Header="点券" Width="90" DisplayMemberBinding="{Binding Cera}" />
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+
+                    <Border Grid.Row="2" Background="#E6222329" BorderBrush="#FF2A2B31" BorderThickness="1"
+                            CornerRadius="16" Padding="14,10" Margin="0,8,0,0">
+                        <StackPanel>
+                            <TextBlock x:Name="SelectedCharInfo" Style="{StaticResource GmStatus}"
+                                       Text="未选择角色" />
+                            <TextBlock x:Name="SelectedCharExtra" Style="{StaticResource GmStatus}" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- ══ 属性编辑 ══ -->
+            <TabItem Header="属性编辑" Style="{StaticResource TabItemDark}">
+                <Grid Margin="14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <TextBlock x:Name="PropTarget" Style="{StaticResource GmStatus}" Text="未选择角色" />
+                        <Button x:Name="LoadStatsBtn" Style="{StaticResource GmButton}" Content="读取属性" Margin="16,0,0,0" Click="LoadStatsBtn_Click" />
+                        <Button x:Name="RefreshSPTPBtn" Style="{StaticResource GmButton}" Content="读取SP/TP" Margin="8,0,0,0" Click="RefreshSPTPBtn_Click" />
+                    </StackPanel>
+
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource GmSectionTitle}" Text="角色属性（只读）" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock x:Name="StatLine1" Style="{StaticResource GmStatus}" />
+                                    <TextBlock x:Name="StatLine2" Style="{StaticResource GmStatus}" Margin="0,2,0,0" />
+                                    <TextBlock x:Name="StatLine3" Style="{StaticResource GmStatus}" Margin="0,2,0,0" />
+                                    <TextBlock x:Name="StatLine4" Style="{StaticResource GmStatus}" Margin="0,2,0,0" />
+                                    <TextBlock x:Name="StatLine5" Style="{StaticResource GmStatus}" Margin="0,2,0,0" />
+                                    <TextBlock x:Name="StatLine6" Style="{StaticResource GmStatus}" Margin="0,2,0,0" />
+                                    <TextBlock x:Name="StatLine7" Style="{StaticResource GmStatus}" Margin="0,2,0,0" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Margin="16,0,0,0">
+                                    <TextBlock x:Name="StatLine8" Style="{StaticResource GmStatus}" />
+                                    <TextBlock x:Name="StatLine9" Style="{StaticResource GmStatus}" Margin="0,2,0,0" />
+                                    <TextBlock x:Name="StatLine10" Style="{StaticResource GmStatus}" Margin="0,2,0,0" />
+                                    <TextBlock x:Name="StatLine11" Style="{StaticResource GmStatus}" Margin="0,2,0,0" />
+                                    <TextBlock x:Name="StatLine12" Style="{StaticResource GmStatus}" Margin="0,2,0,0" />
+                                    <TextBlock x:Name="StatLine13" Style="{StaticResource GmStatus}" Margin="0,2,0,0" />
+                                    <TextBlock x:Name="StatLine14" Style="{StaticResource GmStatus}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </Grid>
+
+                            <TextBlock Style="{StaticResource GmSectionTitle}" Text="SP / TP 与等级" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource GmLabel}" Text="剩余SP：" />
+                                <TextBox x:Name="SPInput" Style="{StaticResource GmBox}" Width="90" />
+                                <TextBlock Style="{StaticResource GmLabel}" Text="剩余TP：" Margin="16,0,8,0" />
+                                <TextBox x:Name="TPInput" Style="{StaticResource GmBox}" Width="90" />
+                                <TextBlock Style="{StaticResource GmLabel}" Text="等级：" Margin="16,0,8,0" />
+                                <TextBox x:Name="LevelInput" Style="{StaticResource GmBox}" Width="70" />
+                                <Button x:Name="ApplySPTPBtn" Style="{StaticResource GmButton}" Content="应用" Margin="16,0,0,0" Click="ApplySPTPBtn_Click" />
+                            </StackPanel>
+
+                            <TextBlock Style="{StaticResource GmSectionTitle}" Text="功能解锁" />
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="UnlockDungeonsBtn" Style="{StaticResource GmButton}" Content="副本全解锁" Click="UnlockDungeonsBtn_Click" />
+                                <Button x:Name="UnlockSlotsBtn" Style="{StaticResource GmButton}" Content="装备槽全解锁" Margin="8,0,0,0" Click="UnlockSlotsBtn_Click" />
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
+
+            <!-- ══ 转职觉醒 ══ -->
+            <TabItem Header="转职觉醒" Style="{StaticResource TabItemDark}">
+                <Grid Margin="14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource GmSectionTitle}" Text="当前职业" />
+                        <TextBlock x:Name="CurrentJobInfo" Style="{StaticResource GmStatus}" Text="未选择角色" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="1" Margin="0,12,0,0">
+                        <TextBlock Style="{StaticResource GmSectionTitle}" Text="设置职业" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource GmLabel}" Text="职业：" />
+                            <ComboBox x:Name="JobCombo" Style="{StaticResource GmCombo}" Width="160"
+                                      SelectionChanged="JobCombo_SelectionChanged" />
+                            <TextBlock Style="{StaticResource GmLabel}" Text="转职：" Margin="16,0,8,0" />
+                            <ComboBox x:Name="GrowCombo" Style="{StaticResource GmCombo}" Width="140"
+                                      SelectionChanged="GrowCombo_SelectionChanged" />
+                            <TextBlock Style="{StaticResource GmLabel}" Text="觉醒：" Margin="16,0,8,0" />
+                            <ComboBox x:Name="AwakeCombo" Style="{StaticResource GmCombo}" Width="130" />
+                            <Button x:Name="ApplyJobBtn" Style="{StaticResource GmButton}" Content="应用转职" Margin="16,0,0,0" Click="ApplyJobBtn_Click" />
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource GmStatus}" Margin="0,8,0,0"
+                                   Text="提示：应用转职会重置 SP/TP 并清空技能，写入职业默认技能与觉醒任务状态。" />
+                    </StackPanel>
+
+                    <Border Grid.Row="2" Margin="0,16,0,0" Background="#E6222329" BorderBrush="#FF2A2B31"
+                            BorderThickness="1" CornerRadius="16" Padding="14,10">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource GmSectionTitle}" Text="职业数据预览" />
+                                <TextBlock x:Name="JobPreview" Style="{StaticResource GmStatus}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- ══ 物品发放 ══ -->
+            <TabItem Header="物品发放" Style="{StaticResource TabItemDark}">
+                <Grid Margin="14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource GmLabel}" Text="物品搜索：" />
+                        <TextBox x:Name="ItemSearchInput" Style="{StaticResource GmBox}" Width="260" />
+                        <Button x:Name="ItemSearchBtn" Style="{StaticResource GmButton}" Content="搜索" Margin="8,0,0,0" Click="ItemSearchBtn_Click" />
+                        <TextBlock Style="{StaticResource GmLabel}" Text="分类：" Margin="16,0,8,0" />
+                        <ComboBox x:Name="ItemCategoryCombo" Style="{StaticResource GmCombo}" Width="120" SelectedIndex="0">
+                            <ComboBoxItem Content="全部" />
+                            <ComboBoxItem Content="消耗品" />
+                            <ComboBoxItem Content="装备" />
+                            <ComboBoxItem Content="材料" />
+                            <ComboBoxItem Content="任务" />
+                            <ComboBoxItem Content="活动" />
+                            <ComboBoxItem Content="其他" />
+                        </ComboBox>
+                        <Button x:Name="ItemPrevPageBtn" Style="{StaticResource GmButton}" Content="上一页" Margin="16,0,0,0" Click="ItemPrevPageBtn_Click" />
+                        <TextBlock x:Name="ItemPageInfo" Style="{StaticResource GmStatus}" Margin="8,0,8,0" Text="0/0" />
+                        <Button x:Name="ItemNextPageBtn" Style="{StaticResource GmButton}" Content="下一页" Click="ItemNextPageBtn_Click" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,8">
+                        <TextBlock Style="{StaticResource GmLabel}" Text="接收角色：" />
+                        <TextBlock x:Name="ItemRoleInfo" Style="{StaticResource GmStatus}" Text="未选择角色" MinWidth="150" />
+                        <TextBlock Style="{StaticResource GmLabel}" Text="数量：" Margin="16,0,8,0" />
+                        <TextBox x:Name="ItemAmountInput" Style="{StaticResource GmBox}" Width="70" Text="1" />
+                        <TextBlock Style="{StaticResource GmLabel}" Text="强化：" Margin="16,0,8,0" />
+                        <TextBox x:Name="ItemReinforceInput" Style="{StaticResource GmBox}" Width="55" Text="0" />
+                        <TextBlock Style="{StaticResource GmLabel}" Text="增幅：" Margin="16,0,8,0" />
+                        <TextBox x:Name="ItemAmplifyInput" Style="{StaticResource GmBox}" Width="55" Text="0" />
+                        <TextBlock Style="{StaticResource GmLabel}" Text="增幅类型：" Margin="16,0,8,0" />
+                        <ComboBox x:Name="AmplifyTypeCombo" Style="{StaticResource GmCombo}" Width="90" SelectedIndex="0">
+                            <ComboBoxItem Content="无" />
+                            <ComboBoxItem Content="力量" />
+                            <ComboBoxItem Content="智力" />
+                            <ComboBoxItem Content="体力" />
+                            <ComboBoxItem Content="精神" />
+                        </ComboBox>
+                    </StackPanel>
+
+                    <ListView x:Name="ItemList" Grid.Row="2" Style="{StaticResource GmList}"
+                              ItemContainerStyle="{StaticResource ListViewItemDark}"
+                              SelectionChanged="ItemList_SelectionChanged">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="ID" Width="80" DisplayMemberBinding="{Binding ItemID}" />
+                                <GridViewColumn Header="名称" Width="180" DisplayMemberBinding="{Binding Name}" />
+                                <GridViewColumn Header="类型" Width="90" DisplayMemberBinding="{Binding Kind}" />
+                                <GridViewColumn Header="分类" Width="80" DisplayMemberBinding="{Binding Category}" />
+                                <GridViewColumn Header="堆叠上限" Width="80" DisplayMemberBinding="{Binding StackLimit}" />
+                                <GridViewColumn Header="去向" Width="100" DisplayMemberBinding="{Binding Destination}" />
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button x:Name="ItemPreviewBtn" Style="{StaticResource GmButton}" Content="预览发放" Click="ItemPreviewBtn_Click" />
+                        <Button x:Name="ItemGrantBtn" Style="{StaticResource GmButton}" Content="发放物品" Margin="8,0,0,0" Click="ItemGrantBtn_Click" />
+                        <TextBlock x:Name="ItemResult" Style="{StaticResource GmStatus}" Margin="16,0,0,0" />
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <!-- ══ 邮件与钱包 ══ -->
+            <TabItem Header="邮件与钱包" Style="{StaticResource TabItemDark}">
+                <Grid Margin="14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 邮件 -->
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Style="{StaticResource GmSectionTitle}" Text="发送邮件（原生接口）" />
+                        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                            <TextBlock Style="{StaticResource GmLabel}" Text="接收角色：" />
+                            <TextBlock x:Name="MailRoleInfo" Style="{StaticResource GmStatus}" Text="未选择角色" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <TextBlock Style="{StaticResource GmLabel}" Text="标题：" />
+                            <TextBox x:Name="MailTitleInput" Style="{StaticResource GmBox}" Width="280" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <TextBlock Style="{StaticResource GmLabel}" Text="正文：" />
+                            <TextBox x:Name="MailBodyInput" Style="{StaticResource GmBox}" Width="280" Height="60"
+                                     AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <TextBlock Style="{StaticResource GmLabel}" Text="金币：" />
+                            <TextBox x:Name="MailGoldInput" Style="{StaticResource GmBox}" Width="90" Text="0" />
+                            <TextBlock Style="{StaticResource GmLabel}" Text="物品ID：" Margin="16,0,8,0" />
+                            <TextBox x:Name="MailItemIdInput" Style="{StaticResource GmBox}" Width="90" Text="0" />
+                            <TextBlock Style="{StaticResource GmLabel}" Text="数量：" Margin="16,0,8,0" />
+                            <TextBox x:Name="MailItemCountInput" Style="{StaticResource GmBox}" Width="70" Text="1" />
+                            <CheckBox x:Name="MailBindCheck" Content="绑定" Foreground="#FFC9C9D4" Margin="12,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <Button x:Name="MailSendBtn" Style="{StaticResource GmButton}" Content="发送邮件" Margin="0,10,0,0"
+                                HorizontalAlignment="Left" Click="MailSendBtn_Click" />
+                        <TextBlock x:Name="MailResult" Style="{StaticResource GmStatus}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!-- 钱包 -->
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Style="{StaticResource GmSectionTitle}" Text="钱包管理（原生接口）" />
+                        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                            <TextBlock Style="{StaticResource GmLabel}" Text="角色：" />
+                            <TextBlock x:Name="WalletRoleInfo" Style="{StaticResource GmStatus}" Text="未选择角色" />
+                        </StackPanel>
+                        <Button x:Name="WalletQueryBtn" Style="{StaticResource GmButton}" Content="查询余额" Margin="0,10,0,0"
+                                HorizontalAlignment="Left" Click="WalletQueryBtn_Click" />
+                        <TextBlock x:Name="WalletResultText" Style="{StaticResource GmStatus}" Margin="0,10,0,0" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                            <TextBlock Style="{StaticResource GmLabel}" Text="金币邮件：" />
+                            <TextBox x:Name="WalletGoldInput" Style="{StaticResource GmBox}" Width="90" Text="1000000" />
+                            <Button x:Name="WalletGoldBtn" Style="{StaticResource GmButton}" Content="发送金币邮件" Margin="8,0,0,0" Click="WalletGoldBtn_Click" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                            <TextBlock Style="{StaticResource GmLabel}" Text="点券到账：" />
+                            <TextBox x:Name="WalletCeraInput" Style="{StaticResource GmBox}" Width="90" Text="10000" />
+                            <Button x:Name="WalletCeraBtn" Style="{StaticResource GmButton}" Content="发放点券" Margin="8,0,0,0" Click="WalletCeraBtn_Click" />
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource GmStatus}" Margin="0,10,0,0" TextWrapping="Wrap"
+                                   Text="提示：金币通过邮件附件发放（领取后到账）；点券直接到账并发送通知邮件。均要求 DNF90Server 正在运行。" />
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <!-- ══ 设置与功能 ══ -->
+            <TabItem Header="设置" Style="{StaticResource TabItemDark}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="14,6,14,16">
+                        <TextBlock Style="{StaticResource GmSectionTitle}" Text="MySQL 连接" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="58" />
+                                <ColumnDefinition Width="230" />
+                                <ColumnDefinition Width="80" />
+                                <ColumnDefinition Width="220" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Style="{StaticResource GmLabel}" Text="主机：" Grid.Row="0" />
+                            <TextBox x:Name="SetHost" Style="{StaticResource GmBox}" Grid.Row="0" Grid.Column="1" />
+                            <TextBlock Style="{StaticResource GmLabel}" Text="端口：" Grid.Row="0" Grid.Column="2" Margin="16,0,8,0" />
+                            <TextBox x:Name="SetPort" Style="{StaticResource GmBox}" Grid.Row="0" Grid.Column="3" />
+                            <TextBlock Style="{StaticResource GmLabel}" Text="库名：" Grid.Row="1" Margin="0,8,0,0" />
+                            <TextBox x:Name="SetDatabase" Style="{StaticResource GmBox}" Grid.Row="1" Grid.Column="1" Margin="0,8,0,0" />
+                            <TextBlock Style="{StaticResource GmLabel}" Text="用户：" Grid.Row="1" Grid.Column="2" Margin="16,8,8,0" />
+                            <TextBox x:Name="SetUser" Style="{StaticResource GmBox}" Grid.Row="1" Grid.Column="3" Margin="0,8,0,0" />
+                            <TextBlock Style="{StaticResource GmLabel}" Text="密码：" Grid.Row="2" Margin="0,8,0,0" />
+                            <PasswordBox x:Name="SetPassword" Grid.Row="2" Grid.Column="1" Margin="0,8,0,0"
+                                         Style="{StaticResource GmPasswordBox}" />
+                            <TextBlock Style="{StaticResource GmLabel}" Text="PVF路径：" Grid.Row="2" Grid.Column="2" Margin="16,8,8,0" />
+                            <TextBox x:Name="SetPvfPath" Style="{StaticResource GmBox}" Grid.Row="2" Grid.Column="3" Margin="0,8,0,0" />
+                        </Grid>
+
+                        <TextBlock Style="{StaticResource GmSectionTitle}" Text="DNF90Server 原生接口" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource GmLabel}" Text="instance.json：" />
+                            <TextBox x:Name="SetInstancePath" Style="{StaticResource GmBox}" Width="420" />
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource GmStatus}" Margin="0,4,0,0"
+                                   Text="原生接口用于：角色实时查询、SP/TP、等级、转职、副本/装备槽解锁、邮件与钱包。未配置时自动回退 MySQL 直连（物品发放除外）。" />
+
+                        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                            <Button x:Name="SaveConfigBtn" Style="{StaticResource GmButton}" Content="保存配置" Click="SaveConfigBtn_Click" />
+                            <Button x:Name="TestConnBtn" Style="{StaticResource GmButton}" Content="测试数据库连接" Margin="8,0,0,0" Click="TestConnBtn_Click" />
+                            <Button x:Name="LoadPvfBtn" Style="{StaticResource GmButton}" Content="加载PVF目录" Margin="8,0,0,0" Click="LoadPvfBtn_Click" />
+                            <TextBlock x:Name="SettingsStatus" Style="{StaticResource GmStatus}" Margin="16,0,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <!-- 中央加载转圈层：PVF 索引加载期间显示，不拦截页面交互 -->
+        <Grid x:Name="LoadingOverlay"
+              Grid.RowSpan="3"
+              Panel.ZIndex="30"
+              Visibility="Collapsed"
+              IsHitTestVisible="False"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center">
+            <Border Background="#DD181820"
+                    BorderBrush="#FF2A2B31"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="18,14">
+                <StackPanel Orientation="Horizontal">
+                    <Image x:Name="LoadingIcon"
+                           Width="30"
+                           Height="30"
+                           Source="pack://application:,,,/Assets/icon-loading.png"
+                           RenderTransformOrigin="0.5,0.5"
+                           VerticalAlignment="Center">
+                        <Image.RenderTransform>
+                            <RotateTransform x:Name="LoadingRotate" Angle="0" />
+                        </Image.RenderTransform>
+                    </Image>
+                    <TextBlock x:Name="LoadingText"
+                               Style="{StaticResource GmStatus}"
+                               Foreground="White"
+                               Text="正在加载物品索引..."
+                               Margin="12,0,0,0"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

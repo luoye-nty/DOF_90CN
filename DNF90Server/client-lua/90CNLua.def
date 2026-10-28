@@ -1,0 +1,4 @@
+LIBRARY "90CNLua"
+EXPORTS
+    Install90CNLua=_Install90CNLua@0
+    Request90CNLuaReload=_Request90CNLuaReload@0

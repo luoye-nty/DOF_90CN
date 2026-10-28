@@ -1,0 +1,898 @@
+===== etc/variousbuffstackablelist.etc (897 lines) =====
+    1  
+    2  [index]
+    3  10015726 
+    4  [system group]
+    5  `Mysterious_Card` 
+    6  [/system group]
+    7  
+    8  [/index]
+    9  
+   10  [index]
+   11  10088326 
+   12  [system group]
+   13  `Fight_Doll` 
+   14  [/system group]
+   15  
+   16  [/index]
+   17  
+   18  [index]
+   19  10098661 
+   20  [system group]
+   21  `DNF_Festival` 
+   22  [/system group]
+   23  
+   24  [/index]
+   25  
+   26  [index]
+   27  10092885 
+   28  [buff list]
+   29  231 
+   30  [/buff list]
+   31  
+   32  [/index]
+   33  
+   34  [index]
+   35  10092886 
+   36  [buff list]
+   37  232 
+   38  [/buff list]
+   39  
+   40  [/index]
+   41  
+   42  [index]
+   43  10092887 
+   44  [buff list]
+   45  233 
+   46  [/buff list]
+   47  
+   48  [/index]
+   49  
+   50  [index]
+   51  10092888 
+   52  [buff list]
+   53  234 
+   54  [/buff list]
+   55  
+   56  [/index]
+   57  
+   58  [index]
+   59  10092889 
+   60  [buff list]
+   61  235 
+   62  [/buff list]
+   63  
+   64  [/index]
+   65  
+   66  [index]
+   67  10092890 
+   68  [buff list]
+   69  236 
+   70  [/buff list]
+   71  
+   72  [/index]
+   73  
+   74  [index]
+   75  10092897 
+   76  [buff list]
+   77  237 
+   78  [/buff list]
+   79  
+   80  [/index]
+   81  
+   82  [index]
+   83  10092898 
+   84  [buff list]
+   85  238 
+   86  [/buff list]
+   87  
+   88  [/index]
+   89  
+   90  [index]
+   91  10092899 
+   92  [buff list]
+   93  239 
+   94  [/buff list]
+   95  
+   96  [/index]
+   97  
+   98  [index]
+   99  10092900 
+  100  [buff list]
+  101  240 
+  102  [/buff list]
+  103  
+  104  [/index]
+  105  
+  106  [index]
+  107  10092901 
+  108  [buff list]
+  109  241 
+  110  [/buff list]
+  111  
+  112  [/index]
+  113  
+  114  [index]
+  115  10092902 
+  116  [buff list]
+  117  242 
+  118  [/buff list]
+  119  
+  120  [/index]
+  121  
+  122  [index]
+  123  10092891 
+  124  [buff list]
+  125  231 
+  126  [/buff list]
+  127  
+  128  [/index]
+  129  
+  130  [index]
+  131  10092892 
+  132  [buff list]
+  133  232 
+  134  [/buff list]
+  135  
+  136  [/index]
+  137  
+  138  [index]
+  139  10092893 
+  140  [buff list]
+  141  233 
+  142  [/buff list]
+  143  
+  144  [/index]
+  145  
+  146  [index]
+  147  10092894 
+  148  [buff list]
+  149  234 
+  150  [/buff list]
+  151  
+  152  [/index]
+  153  
+  154  [index]
+  155  10092895 
+  156  [buff list]
+  157  235 
+  158  [/buff list]
+  159  
+  160  [/index]
+  161  
+  162  [index]
+  163  10092896 
+  164  [buff list]
+  165  236 
+  166  [/buff list]
+  167  
+  168  [/index]
+  169  
+  170  [index]
+  171  10093365 
+  172  [buff list]
+  173  237 
+  174  [/buff list]
+  175  
+  176  [/index]
+  177  
+  178  [index]
+  179  10093366 
+  180  [buff list]
+  181  238 
+  182  [/buff list]
+  183  
+  184  [/index]
+  185  
+  186  [index]
+  187  10093367 
+  188  [buff list]
+  189  239 
+  190  [/buff list]
+  191  
+  192  [/index]
+  193  
+  194  [index]
+  195  10093368 
+  196  [buff list]
+  197  240 
+  198  [/buff list]
+  199  
+  200  [/index]
+  201  
+  202  [index]
+  203  10093369 
+  204  [buff list]
+  205  241 
+  206  [/buff list]
+  207  
+  208  [/index]
+  209  
+  210  [index]
+  211  10093370 
+  212  [buff list]
+  213  242 
+  214  [/buff list]
+  215  
+  216  [/index]
+  217  
+  218  [index]
+  219  10094064 
+  220  [buff list]
+  221  87 
+  222  [/buff list]
+  223  
+  224  [/index]
+  225  
+  226  [index]
+  227  10094065 
+  228  [buff list]
+  229  88 
+  230  [/buff list]
+  231  
+  232  [/index]
+  233  
+  234  [index]
+  235  10094066 
+  236  [buff list]
+  237  89 
+  238  [/buff list]
+  239  
+  240  [/index]
+  241  
+  242  [index]
+  243  10094067 
+  244  [buff list]
+  245  90 
+  246  [/buff list]
+  247  
+  248  [/index]
+  249  
+  250  [index]
+  251  10094068 
+  252  [buff list]
+  253  91 
+  254  [/buff list]
+  255  
+  256  [/index]
+  257  
+  258  [index]
+  259  10094069 
+  260  [buff list]
+  261  92 
+  262  [/buff list]
+  263  
+  264  [/index]
+  265  
+  266  [index]
+  267  10094070 
+  268  [buff list]
+  269  93 
+  270  [/buff list]
+  271  
+  272  [/index]
+  273  
+  274  [index]
+  275  10094071 
+  276  [buff list]
+  277  94 
+  278  [/buff list]
+  279  
+  280  [/index]
+  281  
+  282  [index]
+  283  10094072 
+  284  [buff list]
+  285  95 
+  286  [/buff list]
+  287  
+  288  [/index]
+  289  
+  290  [index]
+  291  10094073 
+  292  [buff list]
+  293  96 
+  294  [/buff list]
+  295  
+  296  [/index]
+  297  
+  298  [index]
+  299  10094074 
+  300  [buff list]
+  301  97 
+  302  [/buff list]
+  303  
+  304  [/index]
+  305  
+  306  [index]
+  307  10094075 
+  308  [buff list]
+  309  98 
+  310  [/buff list]
+  311  
+  312  [/index]
+  313  
+  314  [index]
+  315  10094076 
+  316  [buff list]
+  317  99 
+  318  [/buff list]
+  319  
+  320  [/index]
+  321  
+  322  [index]
+  323  10094077 
+  324  [buff list]
+  325  100 
+  326  [/buff list]
+  327  
+  328  [/index]
+  329  
+  330  [index]
+  331  10094078 
+  332  [buff list]
+  333  101 
+  334  [/buff list]
+  335  
+  336  [/index]
+  337  
+  338  [index]
+  339  10094079 
+  340  [buff list]
+  341  102 
+  342  [/buff list]
+  343  
+  344  [/index]
+  345  
+  346  [index]
+  347  10094080 
+  348  [buff list]
+  349  103 
+  350  [/buff list]
+  351  
+  352  [/index]
+  353  
+  354  [index]
+  355  10094081 
+  356  [buff list]
+  357  104 
+  358  [/buff list]
+  359  
+  360  [/index]
+  361  
+  362  [index]
+  363  10094082 
+  364  [buff list]
+  365  105 
+  366  [/buff list]
+  367  
+  368  [/index]
+  369  
+  370  [index]
+  371  10151244 
+  372  [buff list]
+  373  180 
+  374  [/buff list]
+  375  
+  376  [/index]
+  377  
+  378  [index]
+  379  10151245 
+  380  [buff list]
+  381  181 
+  382  [/buff list]
+  383  
+  384  [/index]
+  385  
+  386  [index]
+  387  10153508 
+  388  [buff list]
+  389  180 
+  390  [/buff list]
+  391  
+  392  [/index]
+  393  
+  394  [index]
+  395  10153509 
+  396  [buff list]
+  397  181 
+  398  [/buff list]
+  399  
+  400  [/index]
+  401  
+  402  [index]
+  403  10157066 
+  404  [buff list]
+  405  215 
+  406  [/buff list]
+  407  
+  408  [/index]
+  409  
+  410  [index]
+  411  10157067 
+  412  [buff list]
+  413  216 
+  414  [/buff list]
+  415  
+  416  [/index]
+  417  
+  418  [index]
+  419  10157068 
+  420  [buff list]
+  421  217 
+  422  [/buff list]
+  423  
+  424  [/index]
+  425  
+  426  [index]
+  427  10157069 
+  428  [buff list]
+  429  218 
+  430  [/buff list]
+  431  
+  432  [/index]
+  433  
+  434  [index]
+  435  10157070 
+  436  [buff list]
+  437  219 
+  438  [/buff list]
+  439  
+  440  [/index]
+  441  
+  442  [index]
+  443  10157071 
+  444  [buff list]
+  445  220 
+  446  [/buff list]
+  447  
+  448  [/index]
+  449  
+  450  [index]
+  451  10157072 
+  452  [buff list]
+  453  221 
+  454  [/buff list]
+  455  
+  456  [/index]
+  457  
+  458  [index]
+  459  10157073 
+  460  [buff list]
+  461  222 
+  462  [/buff list]
+  463  
+  464  [/index]
+  465  
+  466  [index]
+  467  10157074 
+  468  [buff list]
+  469  223 
+  470  [/buff list]
+  471  
+  472  [/index]
+  473  
+  474  [index]
+  475  10157056 
+  476  [buff list]
+  477  224 
+  478  [/buff list]
+  479  
+  480  [/index]
+  481  
+  482  [index]
+  483  10158078 
+  484  [buff list]
+  485  215 
+  486  [/buff list]
+  487  
+  488  [/index]
+  489  
+  490  [index]
+  491  10157973 
+  492  [buff list]
+  493  231 
+  494  [/buff list]
+  495  
+  496  [/index]
+  497  
+  498  [index]
+  499  10157974 
+  500  [buff list]
+  501  232 
+  502  [/buff list]
+  503  
+  504  [/index]
+  505  
+  506  [index]
+  507  10157975 
+  508  [buff list]
+  509  233 
+  510  [/buff list]
+  511  
+  512  [/index]
+  513  
+  514  [index]
+  515  10157976 
+  516  [buff list]
+  517  234 
+  518  [/buff list]
+  519  
+  520  [/index]
+  521  
+  522  [index]
+  523  10157977 
+  524  [buff list]
+  525  235 
+  526  [/buff list]
+  527  
+  528  [/index]
+  529  
+  530  [index]
+  531  10157978 
+  532  [buff list]
+  533  238 
+  534  [/buff list]
+  535  
+  536  [/index]
+  537  
+  538  [index]
+  539  10157979 
+  540  [buff list]
+  541  239 
+  542  [/buff list]
+  543  
+  544  [/index]
+  545  
+  546  [index]
+  547  10157980 
+  548  [buff list]
+  549  240 
+  550  [/buff list]
+  551  
+  552  [/index]
+  553  
+  554  [index]
+  555  10157981 
+  556  [buff list]
+  557  241 
+  558  [/buff list]
+  559  
+  560  [/index]
+  561  
+  562  [index]
+  563  10157982 
+  564  [buff list]
+  565  242 
+  566  [/buff list]
+  567  
+  568  [/index]
+  569  
+  570  [index]
+  571  10162712 
+  572  [buff list]
+  573  273 
+  574  [/buff list]
+  575  
+  576  [/index]
+  577  
+  578  [index]
+  579  10162713 
+  580  [buff list]
+  581  274 
+  582  [/buff list]
+  583  
+  584  [/index]
+  585  
+  586  [index]
+  587  10162714 
+  588  [buff list]
+  589  275 
+  590  [/buff list]
+  591  
+  592  [/index]
+  593  
+  594  [index]
+  595  10162715 
+  596  [buff list]
+  597  276 
+  598  [/buff list]
+  599  
+  600  [/index]
+  601  
+  602  [index]
+  603  10162716 
+  604  [buff list]
+  605  277 
+  606  [/buff list]
+  607  
+  608  [/index]
+  609  
+  610  [index]
+  611  10162717 
+  612  [buff list]
+  613  278 
+  614  [/buff list]
+  615  
+  616  [/index]
+  617  
+  618  [index]
+  619  10162718 
+  620  [buff list]
+  621  279 
+  622  [/buff list]
+  623  
+  624  [/index]
+  625  
+  626  [index]
+  627  10003676 
+  628  [buff list]
+  629  1023 
+  630  [/buff list]
+  631  
+  632  [/index]
+  633  
+  634  [index]
+  635  10004519 
+  636  [buff list]
+  637  1023 
+  638  [/buff list]
+  639  
+  640  [/index]
+  641  
+  642  [index]
+  643  10005759 
+  644  [buff list]
+  645  1083 
+  646  [/buff list]
+  647  
+  648  [/index]
+  649  
+  650  [index]
+  651  10008219 
+  652  [probability buff list]
+  653  1090 60 1091 30 1092 10 
+  654  [/probability buff list]
+  655  
+  656  [/index]
+  657  
+  658  [index]
+  659  10008220 
+  660  [probability buff list]
+  661  1097 60 1098 30 1099 10 
+  662  [/probability buff list]
+  663  
+  664  [/index]
+  665  
+  666  [index]
+  667  10008221 
+  668  [probability buff list]
+  669  1100 60 1101 30 1102 10 
+  670  [/probability buff list]
+  671  
+  672  [/index]
+  673  
+  674  [index]
+  675  10008222 
+  676  [probability buff list]
+  677  1103 30 1104 50 1105 20 
+  678  [/probability buff list]
+  679  
+  680  [/index]
+  681  
+  682  [index]
+  683  10008223 
+  684  [probability buff list]
+  685  1106 30 1107 40 1108 30 
+  686  [/probability buff list]
+  687  
+  688  [/index]
+  689  
+  690  [index]
+  691  490000599 
+  692  [probability buff list]
+  693  1118 6 1119 6 1120 6 1121 6 1122 6 1123 6 1124 6 1125 6 1126 6 1127 6 1128 6 1129 6 1130 6 1131 6 1132 6 1133 6 1134 4 
+  694  [/probability buff list]
+  695  
+  696  [/index]
+  697  
+  698  [index]
+  699  490002458 
+  700  [probability buff list]
+  701  1136 100 
+  702  [/probability buff list]
+  703  
+  704  [/index]
+  705  
+  706  [index]
+  707  490001089 
+  708  [probability buff list]
+  709  1151 100 
+  710  [/probability buff list]
+  711  
+  712  [/index]
+  713  
+  714  [index]
+  715  490001874 
+  716  [probability buff list]
+  717  1220 15 1221 15 1222 15 1223 15 1224 10 1225 10 1226 10 1227 10 
+  718  [/probability buff list]
+  719  
+  720  [/index]
+  721  
+  722  [index]
+  723  490003131 
+  724  [buff list]
+  725  215 
+  726  [/buff list]
+  727  
+  728  [/index]
+  729  
+  730  [index]
+  731  490003224 
+  732  [probability buff list]
+  733  1136 100 
+  734  [/probability buff list]
+  735  
+  736  [/index]
+  737  
+  738  [index]
+  739  490003403 
+  740  [probability buff list]
+  741  1231 100 
+  742  [/probability buff list]
+  743  
+  744  [/index]
+  745  
+  746  [index]
+  747  490003595 
+  748  [probability buff list]
+  749  1136 100 
+  750  [/probability buff list]
+  751  
+  752  [/index]
+  753  
+  754  [index]
+  755  490003686 
+  756  [probability buff list]
+  757  1136 100 
+  758  [/probability buff list]
+  759  
+  760  [/index]
+  761  
+  762  [index]
+  763  490004407 
+  764  [probability buff list]
+  765  1136 100 
+  766  [/probability buff list]
+  767  
+  768  [/index]
+  769  
+  770  [index]
+  771  490004506 
+  772  [probability buff list]
+  773  1136 100 
+  774  [/probability buff list]
+  775  
+  776  [/index]
+  777  
+  778  [index]
+  779  490005308 
+  780  [probability buff list]
+  781  1136 100 
+  782  [/probability buff list]
+  783  
+  784  [/index]
+  785  
+  786  [index]
+  787  490005358 
+  788  [probability buff list]
+  789  1239 100 
+  790  [/probability buff list]
+  791  
+  792  [/index]
+  793  
+  794  [index]
+  795  490005359 
+  796  [probability buff list]
+  797  1240 100 
+  798  [/probability buff list]
+  799  
+  800  [/index]
+  801  
+  802  [index]
+  803  490005491 
+  804  [probability buff list]
+  805  1136 100 
+  806  [/probability buff list]
+  807  
+  808  [/index]
+  809  
+  810  [index]
+  811  490005778 
+  812  [probability buff list]
+  813  1136 100 
+  814  [/probability buff list]
+  815  
+  816  [/index]
+  817  
+  818  [index]
+  819  490701639 
+  820  [probability buff list]
+  821  1136 100 
+  822  [/probability buff list]
+  823  
+  824  [/index]
+  825  
+  826  [index]
+  827  490006630 
+  828  [probability buff list]
+  829  1244 100 
+  830  [/probability buff list]
+  831  
+  832  [/index]
+  833  
+  834  [index]
+  835  490006699 
+  836  [probability buff list]
+  837  1136 100 
+  838  [/probability buff list]
+  839  
+  840  [/index]
+  841  
+  842  [index]
+  843  490006963 
+  844  [probability buff list]
+  845  1136 100 
+  846  [/probability buff list]
+  847  
+  848  [/index]
+  849  
+  850  [index]
+  851  490007529 
+  852  [probability buff list]
+  853  1244 100 
+  854  [/probability buff list]
+  855  
+  856  [/index]
+  857  
+  858  [index]
+  859  490007961 
+  860  [probability buff list]
+  861  1136 100 
+  862  [/probability buff list]
+  863  
+  864  [/index]
+  865  
+  866  [index]
+  867  490008359 
+  868  [probability buff list]
+  869  1136 100 
+  870  [/probability buff list]
+  871  
+  872  [/index]
+  873  
+  874  [index]
+  875  490008470 
+  876  [probability buff list]
+  877  1136 100 
+  878  [/probability buff list]
+  879  
+  880  [/index]
+  881  
+  882  [index]
+  883  490008899 
+  884  [probability buff list]
+  885  1244 100 
+  886  [/probability buff list]
+  887  
+  888  [/index]
+  889  
+  890  [index]
+  891  490008903 
+  892  [probability buff list]
+  893  1136 100 
+  894  [/probability buff list]
+  895  
+  896  [/index]
+  897  

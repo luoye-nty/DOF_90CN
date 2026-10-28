@@ -1,0 +1,77 @@
+{
+  "server_root": "",
+  "database_mode": "sqlite",
+  "public_ip": "",
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 13306,
+    "user": "root",
+    "password": "",
+    "dbname": "dnf_local"
+  },
+  "registration_mode": "open",
+  "registration_closed": false,
+  "public": {
+    "listen_addr": ":18112",
+    "advertise_addr": "",
+    "tls_cert": "tls/launcher.crt",
+    "tls_key": "tls/launcher.key"
+  },
+  "internal": {
+    "listen_addr": "127.0.0.1:19091",
+    "token": "",
+    "ticket_ttl_minutes": 30
+  },
+  "dnfbridge": {
+    "executable": "",
+    "working_dir": "",
+    "extra_args": null,
+    "extra_env": null,
+    "status_port": 7001
+  },
+  "license": {
+    "cdk": ""
+  },
+  "manage": {
+    "enabled": false,
+    "listen_addr": ":18113",
+    "tls_cert": "tls/manage.crt",
+    "tls_key": "tls/manage.key",
+    "pairing_code_salt": "",
+    "pairing_code_hash": "",
+    "pairing_code_plain": "",
+    "token_ttl_minutes": 120,
+    "max_fail_attempts": 5,
+    "lockout_minutes": 10
+  },
+  "pointsink": {
+    "enabled": false,
+    "interval_seconds": 300,
+    "points": 100
+  },
+  "register_bonus": {
+    "enabled": false,
+    "points": 100
+  },
+  "autobackup": {
+    "enabled": false,
+    "interval_hours": 1,
+    "keep": 20
+  },
+  "log_file": {
+    "enabled": true,
+    "dir": "logs",
+    "max_file_mb": 16,
+    "keep_files": 20,
+    "redact": true
+  },
+  "memory_clean": {
+    "enabled": false,
+    "interval_minutes": 30,
+    "server": true,
+    "mysql": false,
+    "self": true,
+    "log_every_run": false
+  },
+  "log_max_lines": 2000
+}

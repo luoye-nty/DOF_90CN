@@ -1,0 +1,2497 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DNF90 管理后台</title>
+<style>
+:root{
+  --bg:#0f1420; --panel:#161d2b; --panel2:#1b2434; --line:#26324a;
+  --text:#e6edf7; --muted:#8fa0bd; --accent:#3d8bfd; --accent2:#2f6fd0;
+  --ok:#2fbf71; --warn:#e0a63a; --danger:#e5534b; --radius:10px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 "Microsoft YaHei",system-ui,-apple-system,"Segoe UI",sans-serif}
+a{color:var(--accent)}
+.hide{display:none!important}
+input,select,button,textarea{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+button{cursor:pointer;background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;transition:.15s}
+button:hover{background:var(--accent2)}
+button.ghost{background:transparent;color:var(--text);border-color:var(--line)}
+button.ghost:hover{background:var(--panel2)}
+button.danger{background:var(--danger);border-color:var(--danger)}
+button.ok{background:var(--ok);border-color:var(--ok)}
+button.small{padding:4px 10px;font-size:12px;border-radius:6px}
+button:disabled{opacity:.55;cursor:not-allowed}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{color:var(--muted);font-weight:600;background:var(--panel2);position:sticky;top:0;z-index:1}
+tbody tr:hover{background:#1a2333}
+tbody tr.sel{background:#1d2c46}
+.scroll{overflow:auto;max-height:52vh;border:1px solid var(--line);border-radius:var(--radius)}
+.wrap{max-width:1280px;margin:0 auto;padding:16px}
+
+#login{display:flex;align-items:center;justify-content:center;min-height:100vh}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:28px;width:340px;box-shadow:0 18px 50px rgba(0,0,0,.45)}
+.card h1{margin:0 0 4px;font-size:20px}
+.card p{margin:0 0 18px;color:var(--muted);font-size:13px}
+.card input{width:100%;margin-bottom:12px}
+.card button{width:100%;padding:10px}
+
+header{background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+.hrow{max-width:1280px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.brand{font-weight:700;font-size:16px;margin-right:auto;display:flex;align-items:center;gap:8px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block}
+.dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.dot.off{background:var(--danger)}
+.pill{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:12px;color:var(--muted)}
+.pill b{color:var(--text)}
+
+/* 侧边栏布局 */
+.layout{display:flex;gap:16px;align-items:flex-start;max-width:1420px;margin:0 auto;padding:16px}
+.side{width:196px;flex:0 0 196px;position:sticky;top:70px}
+.side nav{display:flex;flex-direction:column;gap:4px;margin:0}
+.side nav button{width:100%;text-align:left;padding:9px 12px;border-radius:8px;background:transparent;border:1px solid transparent;color:var(--muted);font-weight:600}
+.side nav button:hover{background:var(--panel2);color:var(--text)}
+.side nav button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.side .sect{color:var(--muted);font-size:11px;letter-spacing:.08em;margin:14px 4px 6px;text-transform:uppercase}
+main{flex:1;min-width:0}
+@media(max-width:860px){
+  .layout{flex-direction:column}
+  .side{width:100%;flex:none;position:static}
+  .side nav{flex-direction:row;flex-wrap:wrap}
+  .side nav button{width:auto}
+  .side .sect{display:none}
+}
+
+section{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:16px}
+section h2{margin:0 0 4px;font-size:15px}
+section .hint{color:var(--muted);font-size:12.5px;margin:0 0 14px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));align-items:end}
+label{display:block;color:var(--muted);font-size:12px;margin-bottom:5px}
+label input,label select{width:100%}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.msg{margin-top:12px;padding:10px 12px;border-radius:8px;font-size:13px;white-space:pre-wrap;word-break:break-all}
+.msg.ok{background:rgba(47,191,113,.12);border:1px solid rgba(47,191,113,.45);color:#7de2ad}
+.msg.err{background:rgba(229,83,75,.12);border:1px solid rgba(229,83,75,.45);color:#ff9d97}
+.msg.info{background:rgba(61,139,253,.12);border:1px solid rgba(61,139,253,.45);color:#9cc4ff}
+.tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11.5px;border:1px solid var(--line);color:var(--muted)}
+.tag.on{color:#7de2ad;border-color:rgba(47,191,113,.5);background:rgba(47,191,113,.1)}
+.tag.off{color:#ff9d97;border-color:rgba(229,83,75,.5);background:rgba(229,83,75,.1)}
+.tag.warn{color:#f0c674;border-color:rgba(224,166,58,.5);background:rgba(224,166,58,.1)}
+.muted{color:var(--muted)}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.lk{cursor:pointer;color:var(--accent)}
+.lk:hover{text-decoration:underline}
+/* 左列表 / 右操作 的双栏布局 */
+.split{display:grid;grid-template-columns:330px 1fr;gap:16px;align-items:start}
+@media(max-width:1000px){.split{grid-template-columns:1fr}}
+.leftpane{position:sticky;top:70px}
+@media(max-width:1000px){.leftpane{position:static}}
+.acct-row{padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px}
+.acct-row:hover{background:var(--panel2)}
+.acct-row.sel{background:#1d2c46;border-left:3px solid var(--accent)}
+.acct-row .u{font-weight:600}
+.acct-row .m{color:var(--muted);font-size:11.5px}
+.charcard{padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;cursor:pointer;transition:.15s}
+.charcard:hover{border-color:var(--accent)}
+.charcard.sel{border-color:var(--accent);background:#1d2c46}
+.charcard .n{font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.charcard .s{color:var(--muted);font-size:11.5px;margin-top:2px}
+.lvbadge{margin-left:auto;background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+  border-radius:999px;padding:1px 9px;font-size:11px;font-weight:600}
+.charcard.sel .lvbadge{border-color:var(--accent);color:#9cc4ff}
+.catbtns{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.catbtns button{background:transparent;border:1px solid var(--line);color:var(--muted);font-weight:600;padding:4px 12px;font-size:12.5px;border-radius:999px}
+.catbtns button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+/* 角色面板内的子标签 */
+.subtabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin:0 0 16px}
+.subtabs button{background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted);font-weight:600;padding:8px 14px;border-radius:0}
+.subtabs button:hover{color:var(--text)}
+.subtabs button.active{color:var(--accent);border-bottom-color:var(--accent)}
+.dur{font-family:ui-monospace,Consolas,monospace}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.cols{grid-template-columns:1fr}}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px}
+.kv .k{color:var(--muted)}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px}
+.ov .box{background:var(--panel);border:1px solid var(--line);border-radius:12px;max-width:760px;width:100%;max-height:80vh;overflow:auto;padding:20px}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div class="card">
+    <h1 id="loginTitle">DNF90 管理后台</h1>
+    <p>请输入后台密码</p>
+    <input id="pwd" type="password" placeholder="后台密码" autocomplete="current-password">
+    <button onclick="doLogin()" id="loginBtn">登 录</button>
+    <div id="loginMsg" class="msg err hide"></div>
+  </div>
+</div>
+
+<div id="app" class="hide">
+  <header>
+    <div class="hrow">
+      <div class="brand"><span class="dot" id="dot"></span><span id="title">DNF90 管理后台</span></div>
+      <span class="pill">在线角色 <b id="pOnline">-</b></span>
+      <span class="pill">生效封禁 <b id="pBans">-</b></span>
+      <button class="ghost small" onclick="refreshStatus()">刷新</button>
+      <button class="ghost small" onclick="doLogout()">退出</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="side">
+      <nav>
+        <button data-tab="overview" class="active" onclick="tab('overview',this)">概览</button>
+        <div class="sect">账号</div>
+        <button data-tab="accounts" onclick="tab('accounts',this)">账号查询</button>
+        <div class="sect">角色</div>
+        <button data-tab="character" onclick="tab('character',this)">角色管理</button>
+        <div class="sect">发放</div>
+        <button data-tab="batch" onclick="tab('batch',this)">全服 / 批量</button>
+        <button data-tab="mail" onclick="tab('mail',this)">物品与邮件</button>
+        <button data-tab="cera" onclick="tab('cera',this)">点券发放</button>
+        <div class="sect">运营</div>
+        <button data-tab="bans" onclick="tab('bans',this)">封禁 / 解封</button>
+        <button data-tab="records" onclick="tab('records',this)">通关记录</button>
+      </nav>
+    </aside>
+    <main>
+
+    <!-- ============ 概览 ============ -->
+    <div id="tab-overview">
+      <section>
+        <h2>服务器状态</h2>
+        <p class="hint">数据来自游戏服务端管理口 /dnf/gm/status</p>
+        <div class="grid" id="ovGrid"></div>
+        <div class="row" style="margin-top:14px">
+          <button class="ghost" onclick="reloadChannels()" id="chReloadBtn">频道热重载</button>
+          <span class="muted">改完 channel_info.etc 后点这里，无需重启服务端</span>
+        </div>
+
+        <h2 style="margin-top:22px">团本翻牌奖励 / 概率</h2>
+        <p class="hint">
+          覆盖 <b>安图恩 / 卢克 / 超时空攻坚战</b> 的翻牌奖励，<b>改完立刻作用于下一场结算</b>，不用改 PVF、不用重启。<br>
+          ⚠ 加权池是按<b>相对比例</b>抽的 —— 给整个池乘同一个倍率等于没改，要调就调<b>个别条目</b>。<br>
+          键格式：<span class="mono">P|阶段|类别|奖励盒ID</span>（阶段池里挑哪个奖励盒） ·
+          <span class="mono">D|奖励盒ID|道具ID</span>（盒内挑哪件道具、也是替换道具的键）。
+          值 = 百分比：<b>100</b> = 原权重，<b>0</b> = 永不抽出，<b>1000</b> = 十倍权重。
+        </p>
+        <div class="row">
+          <button onclick="loadRaidRewardPools()" id="rrBtn">读取奖励池</button>
+          <button onclick="saveRaidRewardPools()" id="rrSaveBtn">保存改动</button>
+          <button class="ghost small" onclick="rrAddManual()">手动加一行</button>
+          <button class="danger small" onclick="rrClearAll()">全部恢复原值</button>
+          <span class="muted" id="rrInfo"></span>
+        </div>
+        <div class="scroll" style="max-height:56vh;margin-top:10px">
+          <table>
+            <thead><tr>
+              <th style="width:88px">团本</th><th style="width:60px">阶段</th>
+              <th style="width:110px">奖励类型</th><th style="width:110px">奖励盒ID</th>
+              <th>道具名称</th><th style="width:80px">原权重</th>
+              <th style="width:70px">占比</th><th style="width:110px">倍率 %</th>
+            </tr></thead>
+            <tbody id="rrRows"><tr><td colspan="8" class="muted">点「读取奖励池」载入</td></tr></tbody>
+          </table>
+        </div>
+        <div id="rrMsg" class="msg hide"></div>
+
+
+
+
+        <div id="ovMsg" class="msg hide"></div>
+      </section>
+    </div>
+
+    <!-- ============ 角色管理 ============ -->
+    <div id="tab-character" class="hide">
+      <div class="split">
+        <aside class="leftpane">
+          <section>
+            <h2>账号</h2>
+            <div class="row" style="margin-bottom:10px">
+              <input id="acctSearch" placeholder="搜索账号名 / ID（留空=全部）" style="flex:1;min-width:120px"
+                     onkeydown="if(event.key==='Enter')loadAccountList()">
+              <button class="ghost small" onclick="loadAccountList()" id="acctBtn">刷新</button>
+            </div>
+            <div id="acctListMsg" class="msg hide"></div>
+            <div class="scroll" style="max-height:30vh">
+              <div id="acctList"><div class="muted" style="padding:10px">加载中...</div></div>
+            </div>
+          </section>
+
+          <section style="margin-top:16px">
+            <h2>角色 <span class="muted" id="charCount"></span></h2>
+            <div class="scroll" style="max-height:44vh">
+              <div id="charCards"><div class="muted" style="padding:10px">← 先选一个账号</div></div>
+            </div>
+          </section>
+        </aside>
+
+        <div class="rightpane">
+          <section id="chEmpty">
+            <h2>角色操作</h2>
+            <p class="hint">在左侧点一个<b>账号</b>，再从角色列表里点一个<b>角色</b>，这里就会出现该角色的全部操作面板。</p>
+            <div id="chMsg" class="msg hide"></div>
+          </section>
+
+          <section id="chPanel" class="hide">
+            <h2>角色操作 <span class="muted" id="chTitle"></span></h2>
+            <div class="subtabs">
+              <button data-cp="attr" class="active" onclick="cpTab('attr',this)">角色属性</button>
+              <button data-cp="bag" onclick="cpTab('bag',this)">背包 / 仓库</button>
+              <button data-cp="mail" onclick="cpTab('mail',this)">邮箱</button>
+              <button data-cp="quest" onclick="cpTab('quest',this)">任务</button>
+              <button data-cp="send" onclick="cpTab('send',this)">发放物品</button>
+              <button data-cp="raid" onclick="cpTab('raid',this)">团本次数</button>
+            </div>
+
+            <div id="cp-attr">
+            <p class="hint">所有修改都走服务端原生仓储事务；角色在线时会立即下发刷新包，离线则在下次登录生效。</p>
+
+            <!-- 黑钻 -->
+        <div class="cols" style="margin-bottom:16px">
+          <div>
+            <h2 style="font-size:14px">黑钻开通 / 续期</h2>
+            <p class="hint">黑钻是<b>账号级</b>权益（整个账号共享），续期会在原到期时间上叠加。</p>
+            <div class="row">
+              <label style="margin:0"><span style="color:var(--muted);font-size:12px">天数</span>
+                <input id="bdDays" type="number" min="1" max="3650" value="30" style="width:110px"></label>
+              <button onclick="openBD()" id="bdBtn">开通 / 续期</button>
+              <button class="ghost" onclick="queryBD()">查询当前状态</button>
+            </div>
+            <div id="bdMsg" class="msg hide"></div>
+          </div>
+          <div>
+            <h2 style="font-size:14px">等级</h2>
+            <p class="hint">只能升级、不能降级；上限见服务端配置。</p>
+            <div class="row">
+              <label style="margin:0"><span style="color:var(--muted);font-size:12px">目标等级</span>
+                <input id="lvLevel" type="number" min="1" max="120" value="90" style="width:110px"></label>
+              <button onclick="doSetLevel()" id="lvBtn">设置等级</button>
+            </div>
+            <div id="lvMsg" class="msg hide"></div>
+          </div>
+        </div>
+
+        <div class="cols" style="margin-bottom:16px">
+          <div>
+            <h2 style="font-size:14px">SP / TP</h2>
+            <p class="hint">填要设置的<b>剩余点数</b>；勾选「同时提升上限」可在超出时提升总上限。范围 0..65535。</p>
+            <div class="row">
+              <label style="margin:0"><span style="color:var(--muted);font-size:12px">剩余 SP</span>
+                <input id="spVal" type="number" min="0" max="65535" value="2000" style="width:120px"></label>
+              <label style="margin:0"><span style="color:var(--muted);font-size:12px">剩余 TP</span>
+                <input id="tpVal" type="number" min="0" max="65535" value="200" style="width:120px"></label>
+              <label style="margin:0;font-size:12px"><input type="checkbox" id="spExtend" checked style="width:auto"> 同时提升上限</label>
+              <button onclick="doSetSPTP()" id="spBtn">设置</button>
+            </div>
+            <div id="spMsg" class="msg hide"></div>
+          </div>
+          <div>
+            <h2 style="font-size:14px">转职</h2>
+            <p class="hint">job 0-15，一次转职 0-15，二次转职 0-2。</p>
+            <div class="row">
+              <label style="margin:0"><span style="color:var(--muted);font-size:12px">职业 job</span>
+                <input id="jobVal" type="number" min="0" max="15" value="0" style="width:90px"></label>
+              <label style="margin:0"><span style="color:var(--muted);font-size:12px">一次转职</span>
+                <input id="jobF" type="number" min="0" max="15" value="0" style="width:90px"></label>
+              <label style="margin:0"><span style="color:var(--muted);font-size:12px">二次转职</span>
+                <input id="jobS" type="number" min="0" max="2" value="0" style="width:90px"></label>
+              <button onclick="doSetJob()" id="jobBtn">设置</button>
+            </div>
+            <div id="jobMsg" class="msg hide"></div>
+          </div>
+        </div>
+
+        <div class="cols">
+          <div>
+            <h2 style="font-size:14px">副本权限</h2>
+            <p class="hint">「全部解锁」会按每个副本的最高难度一次性写入（约 1400 条）。</p>
+            <div class="row">
+              <button onclick="doUnlockDungeons('all')" id="dgBtn">全部解锁（最高难度）</button>
+            </div>
+            <div id="dgMsg" class="msg hide"></div>
+          </div>
+          <div>
+            <h2 style="font-size:14px">特殊装备槽</h2>
+            <p class="hint">「全部解锁」走原生通道，在线也能用；「勾选解锁」要求角色离线。</p>
+            <div class="row">
+              <button onclick="doUnlockEquipSlots()" id="eqBtn">解锁全部装备槽</button>
+              <button class="ghost" onclick="doQueryEquipSlots()">查看装备栏状态</button>
+            </div>
+            <div id="eqMsg" class="msg hide"></div>
+          </div>
+        </div>
+
+        <!-- 金币 / 疲劳 -->
+        <div class="cols" style="margin-top:16px">
+          <div>
+            <h2 style="font-size:14px">金币</h2>
+            <p class="hint">直接设置角色金币（覆盖）。</p>
+            <div class="row">
+              <label style="margin:0"><span class="muted" style="font-size:12px">目标值</span>
+                <input id="goldVal" type="number" min="0" value="1000000" style="width:150px"></label>
+              <button onclick="doSetGold()" id="goldBtn">设置金币</button>
+            </div>
+            <div id="goldMsg" class="msg hide"></div>
+          </div>
+          <div>
+            <h2 style="font-size:14px">疲劳值</h2>
+            <p class="hint">回满 = 恢复到上限；指定值范围 0~上限。**允许角色在线**。</p>
+            <div class="row">
+              <label style="margin:0"><span class="muted" style="font-size:12px">指定值</span>
+                <input id="fatVal" type="number" min="0" value="156" style="width:110px"></label>
+              <button onclick="doFatigue('max')" id="fatBtn">回满</button>
+              <button class="ghost" onclick="doFatigue('set')">设为指定值</button>
+            </div>
+            <div id="fatMsg" class="msg hide"></div>
+          </div>
+        </div>
+
+        <!-- 转职 / 附加点 -->
+        <div class="cols" style="margin-top:16px">
+          <div style="grid-column:1/-1">
+            <h2 style="font-size:14px">转职 / 觉醒</h2>
+            <p class="hint">
+              大系 → 转职分支 → 觉醒，三级级联，<b>选名字就行，不用记代码</b>。<br>
+              改完按服务端同一套算法重算战斗属性；GM 完成转职/觉醒任务时也会自动应用。
+            </p>
+            <div class="row">
+              <select id="crJobSel" style="min-width:160px" onchange="syncGrowOptions()"></select>
+              <select id="crGrowSel" style="min-width:160px" onchange="syncAwakeOptions()"></select>
+              <select id="crAwaSel" style="min-width:160px"></select>
+              <button onclick="doSetCareer()" id="crBtn">覆写</button>
+            </div>
+            <p class="hint" style="margin-top:8px">当前：<span id="crCurrent" class="mono">—</span></p>
+            <div id="crMsg" class="msg hide"></div>
+          </div>
+          <div>
+            <h2 style="font-size:14px">附加 SP / TP</h2>
+            <p class="hint">设置**附加点**（会持久化，升级不丢）。与上面「SP/TP」的剩余点数不同。</p>
+            <div class="row">
+              <label style="margin:0"><span class="muted" style="font-size:12px">附加 SP</span>
+                <input id="bonusSp" type="number" min="0" value="0" style="width:110px"></label>
+              <label style="margin:0"><span class="muted" style="font-size:12px">附加 TP</span>
+                <input id="bonusTp" type="number" min="0" value="0" style="width:110px"></label>
+              <button onclick="doSetSkillBonus()" id="bonusBtn">设置附加点</button>
+            </div>
+            <div id="bonusMsg" class="msg hide"></div>
+          </div>
+        </div>
+
+        <!-- 副本 / 票据 -->
+        <div class="cols" style="margin-top:16px">
+          <div>
+            <h2 style="font-size:14px">副本解锁</h2>
+            <p class="hint">按官方接口解锁（与上面"全部解锁"不同路径，两者都能用）。</p>
+            <div class="row">
+              <button class="ghost" onclick="doDungeonUnlock('difficulties')" id="dgdBtn">解锁全部难度</button>
+              <button class="ghost" onclick="doDungeonUnlock('hell')">解锁全部地狱图</button>
+              <button class="ghost" onclick="doDungeonAccess()">查看副本统计</button>
+            </div>
+            <div id="dgdMsg" class="msg hide"></div>
+          </div>
+          <div>
+            <h2 style="font-size:14px">补发欢乐代币券</h2>
+            <p class="hint">扫描该角色背包里的券道具，把数量补进账号钱包并删掉背包行。（无需填其它参数）</p>
+            <div class="row">
+              <button onclick="doRepairHappy()" id="rhBtn">补发</button>
+            </div>
+            <div id="rhMsg" class="msg hide"></div>
+          </div>
+        </div>
+
+        <!-- 危险区 -->
+        <div style="margin-top:20px;border:1px solid rgba(229,83,75,.5);border-radius:10px;padding:16px">
+          <h2 style="font-size:14px;color:#ff9d97">⚠ 危险区</h2>
+          <p class="hint" style="margin-bottom:12px">
+            删除角色为**软删除**（与玩家在选人界面自己删除同一条路径），会同时清理其它角色的好友列表条目。
+            <b>要求角色离线</b>，且必须输入完整角色名确认。
+          </p>
+          <div class="row">
+            <input id="delConfirm" placeholder="输入该角色的完整名称以确认" style="min-width:240px">
+            <button class="danger" onclick="doDeleteCharacter()" id="delBtn">删除该角色</button>
+          </div>
+          <div id="delMsg" class="msg hide"></div>
+        </div>
+            </div><!-- /cp-attr -->
+
+            <!-- ===== 背包 ===== -->
+            <div id="cp-bag" class="hide">
+              <div class="row" style="margin-bottom:10px">
+                <button class="ghost small" onclick="cpLoadInventory()" id="cpBagBtn">读取全部</button>
+                <span id="cpBagFilters" class="catbtns" style="margin:0 0 0 8px"></span>
+                <span class="muted" id="cpBagInfo"></span>
+              </div>
+              <div id="cpBagMsg" class="msg hide"></div>
+              <div class="scroll" style="max-height:56vh">
+                <table>
+                  <thead><tr><th>容器</th><th>槽位</th><th>物品ID</th><th>名称</th><th>数量</th><th>绑定</th><th>操作</th></tr></thead>
+                  <tbody id="cpBagRows"><tr><td colspan="7" class="muted">点「刷新背包」载入</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- ===== 邮箱 ===== -->
+            <div id="cp-mail" class="hide">
+              <div class="row" style="margin-bottom:10px">
+                <button class="ghost small" onclick="cpLoadMailbox()" id="cpMailBtn">刷新邮箱</button>
+                <button class="danger small" onclick="cpClearMailbox()" id="cpMailClearBtn">全部清除</button>
+                <span class="muted" id="cpMailInfo"></span>
+              </div>
+              <div id="cpMailMsg" class="msg hide"></div>
+              <div class="scroll" style="max-height:56vh">
+                <table>
+                  <thead><tr><th>邮件ID</th><th>标题</th><th>发件</th><th>附件</th><th>状态</th><th>操作</th></tr></thead>
+                  <tbody id="cpMailRows"><tr><td colspan="6" class="muted">点「刷新邮箱」载入</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- ===== 任务 ===== -->
+            <div id="cp-quest" class="hide">
+              <div class="row" style="margin-bottom:10px">
+                <input id="cpQFilter" placeholder="按任务名/ID 过滤" style="min-width:200px" oninput="renderQuests()">
+                <button class="ghost small" onclick="cpLoadQuests()" id="cpQBtn">刷新任务</button>
+                <button class="ghost small" onclick="searchQuests()" id="qSearchBtn">搜索更多任务（含未接取）</button>
+                <span class="muted" id="qWho"></span>
+              </div>
+              <div id="qMsg" class="msg hide"></div>
+              <div class="catbtns">
+                <button data-cat="all" class="active" onclick="setQuestCat('all',this)">全部</button>
+                <button data-cat="active" onclick="setQuestCat('active',this)">进行中</button>
+                <button data-cat="completed" onclick="setQuestCat('completed',this)">已完成</button>
+                <button data-cat="daily" onclick="setQuestCat('daily',this)">每日任务</button>
+                <button data-cat="achievement" onclick="setQuestCat('achievement',this)">成就任务</button>
+                <button data-cat="main" onclick="setQuestCat('main',this)">主线 / 支线</button>
+                <button data-cat="search" onclick="setQuestCat('search',this)">搜索结果</button>
+              </div>
+              <div class="row" style="margin-bottom:10px">
+                <button class="ghost small" onclick="selectAllQuests(true)">全选（当前筛选）</button>
+                <button class="ghost small" onclick="selectAllQuests(false)">清空选择</button>
+                <button class="danger small" onclick="completeSelectedQuests()">批量完成选中</button>
+                <button class="danger small" onclick="completeMainChains()">完成所有主线链</button>
+                <span class="muted" id="qCount"></span>
+              </div>
+              <div class="scroll" style="max-height:52vh">
+                <table>
+                  <thead><tr><th style="width:34px"></th><th>ID</th><th>任务名</th><th>类型</th><th>等级</th><th>状态</th><th>主线</th><th>操作</th></tr></thead>
+                  <tbody id="qRows"><tr><td colspan="8" class="muted">点「刷新任务」载入</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- ===== 发放物品 ===== -->
+            <div id="cp-send" class="hide">
+              <p class="hint">给当前角色 <b id="cpSendWho"></b> 发放物品。搜索 → 加入待发清单 → 发送（走系统邮件，服务端按 PVF 类型自动归位容器）。</p>
+              <div class="row" style="margin-bottom:10px">
+                <input id="cpItQ" placeholder="物品名或 ID" style="flex:1;min-width:160px">
+                <select id="cpItKind" style="width:auto">
+                  <option value="">全部类型</option>
+                  <option value="equipment">装备</option>
+                  <option value="stackable">材料/消耗品</option>
+                </select>
+                <select id="cpItRarity" style="width:auto">
+                  <option value="-1">全部品质</option>
+                  <option value="0">0 普通</option><option value="1">1 高级</option>
+                  <option value="2">2 稀有</option><option value="3">3 神器</option>
+                  <option value="4">4 史诗</option><option value="5">5 传说</option><option value="6">6 神话</option>
+                </select>
+                <button onclick="cpSearchItems(0)" id="cpItBtn">搜索</button>
+              </div>
+              <div id="cpItMsg" class="msg hide"></div>
+              <div class="scroll" style="max-height:30vh;margin-bottom:12px">
+                <table>
+                  <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>品质</th><th>等级</th><th></th></tr></thead>
+                  <tbody id="cpItRows"><tr><td colspan="6" class="muted">输入关键字后搜索</td></tr></tbody>
+                </table>
+              </div>
+              <div class="row" style="justify-content:space-between">
+                <span class="muted" id="cpItPage"></span>
+                <span>
+                  <button class="ghost small" onclick="cpSearchItems(-1)">上一页</button>
+                  <button class="ghost small" onclick="cpSearchItems(1)">下一页</button>
+                </span>
+              </div>
+
+              <h2 style="font-size:14px;margin-top:16px">待发清单（最多 10 件）</h2>
+              <div class="scroll" style="max-height:24vh;margin-top:8px">
+                <table>
+                  <thead><tr><th>ID</th><th>名称</th><th>数量</th><th>绑定</th><th>附加</th><th>值</th><th></th></tr></thead>
+                  <tbody class="cart-rows" id="cpCartRows"><tr><td colspan="7" class="muted">从上面搜索结果点「发放」加入</td></tr></tbody>
+                </table>
+              </div>
+              <div class="grid" style="margin-top:12px">
+                <label>邮件标题<input id="cpSendTitle" placeholder="GM 发放"></label>
+                <label>附带金币<input id="cpSendGold" type="number" min="0" value="0"></label>
+              </div>
+              <label style="margin-top:10px">正文<textarea id="cpSendBody" rows="2" style="width:100%" placeholder="请在邮箱中领取。"></textarea></label>
+              <div class="row" style="margin-top:12px">
+                <button onclick="cpSendMail()" id="cpSendBtn">发送给当前角色</button>
+                <button class="ghost" onclick="clearCart()">清空清单</button>
+              </div>
+              <div id="cpSendMsg" class="msg hide"></div>
+            </div>
+
+            <!-- ===== 团本次数 ===== -->
+            <div id="cp-raid" class="hide">
+              <div class="row" style="margin-bottom:12px">
+                <button class="ghost small" onclick="cpLoadRaidCounters()" id="cpRaidRefreshBtn">刷新次数</button>
+                <span class="muted" id="cpRaidWho"></span>
+              </div>
+              <p class="hint">
+                每个按钮只重置对应的一个计数。“账号级”次数按当前角色所属账号计算，会影响同账号其他角色；
+                “角色级”只影响当前角色。奖励资格按每场团本通关和翻牌结算生成，不存在可单独持久重置的奖励计数。
+              </p>
+              <div id="cpRaidMsg" class="msg hide"></div>
+              <div id="cpRaidGroups" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px">
+                <div class="muted">切到此页后自动读取</div>
+              </div>
+            </div>
+      </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 物品与邮件 ============ -->
+    <div id="tab-mail" class="hide">
+      <div class="cols">
+        <section>
+          <h2>① 搜索物品</h2>
+          <p class="hint">物品目录由服务端从 Script.pvf 解析，按名称或 ID 搜索。</p>
+          <div class="row">
+            <input id="itQ" placeholder="物品名或 ID" style="flex:1;min-width:150px">
+            <button onclick="searchItems(0)" id="itBtn">搜索</button>
+          </div>
+          <div class="grid" style="margin-top:12px">
+            <label>类型 kind
+              <select id="itKind">
+                <option value="">全部</option>
+                <option value="equipment">装备</option>
+                <option value="stackable">材料/消耗品</option>
+              </select>
+            </label>
+            <label>稀有度
+              <select id="itRarity">
+                <option value="-1">全部</option>
+                <option value="0">0 普通</option><option value="1">1 高级</option>
+                <option value="2">2 稀有</option><option value="3">3 神器</option>
+                <option value="4">4 史诗</option><option value="5">5 传说</option><option value="6">6 神话</option>
+              </select>
+            </label>
+            <label>最低等级<input id="itMinLv" type="number" min="0" value="0"></label>
+          </div>
+          <div id="itMsg" class="msg hide"></div>
+          <div class="scroll" style="margin-top:12px;max-height:38vh">
+            <table>
+              <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>稀有</th><th>等级</th><th></th></tr></thead>
+              <tbody id="itRows"><tr><td colspan="6" class="muted">输入关键字后搜索</td></tr></tbody>
+            </table>
+          </div>
+          <div class="row" style="margin-top:10px;justify-content:space-between">
+            <span class="muted" id="itPageInfo"></span>
+            <span>
+              <button class="ghost small" onclick="searchItems(-1)">上一页</button>
+              <button class="ghost small" onclick="searchItems(1)">下一页</button>
+            </span>
+          </div>
+        </section>
+
+        <section>
+          <h2>② 发送邮件 / 发放物品</h2>
+          <p class="hint">物品以系统邮件附件交付，服务端会按 PVF 类型自动放进正确容器（背包/时装/宠物…）。</p>
+          <div class="grid">
+            <label>收件角色 <span class="muted">（账号或角色名）</span><input id="mlChar" placeholder="账号 或 角色名"></label>
+            <label>标题<input id="mlTitle" placeholder="GM 发放"></label>
+          </div>
+          <label style="margin-top:10px">正文<textarea id="mlBody" rows="2" style="width:100%" placeholder="请在邮箱中领取。"></textarea></label>
+          <div class="grid" style="margin-top:12px">
+            <label>附带金币<input id="mlGold" type="number" min="0" value="0"></label>
+          </div>
+
+          <h2 style="font-size:14px;margin-top:16px">待发物品（最多 10 件）</h2>
+          <div class="scroll" style="max-height:26vh;margin-top:8px">
+            <table>
+              <thead><tr><th>ID</th><th>名称</th><th>数量</th><th>绑定</th><th>附加</th><th>值</th><th></th></tr></thead>
+              <tbody class="cart-rows" id="cartRows"><tr><td colspan="7" class="muted">从上一步「发放」加入</td></tr></tbody>
+            </table>
+          </div>
+          <div class="row" style="margin-top:14px">
+            <button onclick="sendMail()" id="mlBtn">发送</button>
+            <button class="ghost" onclick="clearCart()">清空列表</button>
+          </div>
+          <div id="mlMsg" class="msg hide"></div>
+        </section>
+      </div>
+
+      <section>
+        <h2>单件高级发放（期限 / 强化 / 增幅 / 锻造 / 品级 / 徽章 / 附魔）</h2>
+        <p class="hint">
+          走上游的单件邮件接口，比上面的「待发清单」支持的选项更多。<b>装备类数量必须是 1</b>。<br>
+          从上面搜索结果点「高级」可自动填入物品 ID。徽章/附魔宝珠需先填对应物品 ID。
+        </p>
+        <div class="grid">
+          <label>收件角色<input id="rmChar" placeholder="账号 或 角色名"></label>
+          <label>物品 ID<input id="rmItem" type="number" min="1" placeholder="例如 10000000"></label>
+          <label>数量<input id="rmCount" type="number" min="1" value="1"></label>
+          <label>期限天数<input id="rmExpire" type="number" min="0" max="3650" value="30"></label>
+          <label>强化等级<input id="rmReinforce" type="number" min="0" max="31" value="0"></label>
+          <label>增幅类型
+            <select id="rmAmpType">
+              <option value="0">无</option><option value="1">1（体力）</option>
+              <option value="2">2（精神）</option><option value="3">3（力量）</option>
+              <option value="4">4（智力）</option>
+            </select>
+          </label>
+          <label>锻造等级<input id="rmForging" type="number" min="0" max="8" value="0"></label>
+          <label>品级
+            <select id="rmQuality">
+              <option value="">不改变</option>
+              <option value="default">default（不变）</option>
+              <option value="random">随机品级</option>
+              <option value="top">最上级</option>
+            </select>
+          </label>
+          <label>徽章物品ID<input id="rmEmblem" placeholder="多个用逗号分隔，可留空"></label>
+          <label>附魔宝珠ID<input id="rmEnchant" type="number" min="0" value="0"></label>
+          <label>邮件标题<input id="rmTitle" placeholder="GM 发放"></label>
+        </div>
+        <label style="margin-top:10px">正文<textarea id="rmBody" rows="2" style="width:100%" placeholder="请在邮箱中领取物品。"></textarea></label>
+        <div class="row" style="margin-top:14px">
+          <button onclick="sendRichMail()" id="rmBtn">发送单件</button>
+        </div>
+        <div id="rmMsg" class="msg hide"></div>
+      </section>
+    </div>
+
+    <!-- ============ 点券发放 ============ -->
+    <div id="tab-cera" class="hide">
+      <section>
+        <h2>点券 / 代币 / 金币发放</h2>
+        <p class="hint">按<b>角色名</b>发放最稳妥；只填账号则自动取该账号第一个角色。「加量」在原余额上增加，「设为」直接覆盖。</p>
+        <div class="grid">
+          <label>角色名<input id="cName" placeholder="例如 鬼剑士"></label>
+          <label>或 账号<input id="cAccount" placeholder="用户名 或 dnf:..."></label>
+          <label>币种
+            <select id="cCur">
+              <option value="cera">点券</option>
+              <option value="token_cera">代币券</option>
+              <option value="happy_token_cera">欢乐代币券</option>
+              <option value="gold">金币</option>
+            </select>
+          </label>
+          <label>方式
+            <select id="cMode">
+              <option value="add">加量（在原基础上增加）</option>
+              <option value="set">设为（覆盖原值）</option>
+            </select>
+          </label>
+          <label>数量<input id="cAmount" type="number" min="1" value="1000"></label>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <button onclick="grantCera()" id="cBtn">立即发放</button>
+          <button class="ghost" onclick="queryWallet()">查询该角色余额</button>
+        </div>
+        <div id="cMsg" class="msg hide"></div>
+      </section>
+    </div>
+
+    <!-- ============ 封禁 ============ -->
+    <div id="tab-bans" class="hide">
+      <section>
+        <h2>封禁账号</h2>
+        <p class="hint">按<b>用户名</b>封禁会自动解析成账号主键。天数填 0 表示<b>永久</b>。勾选「同时踢下线」会立刻断开在线连接。</p>
+        <div class="grid">
+          <label>封禁类型
+            <select id="bType">
+              <option value="username">用户名（推荐）</option>
+              <option value="account">账号主键 dnf:...</option>
+              <option value="ip">IP 地址</option>
+              <option value="machine">机器码 hw:...</option>
+            </select>
+          </label>
+          <label>目标<input id="bTarget" placeholder="用户名 / dnf:... / IP / 机器码"></label>
+          <label>原因<input id="bReason" placeholder="例如 使用外挂"></label>
+          <label>天数（0=永久）<input id="bDays" type="number" min="0" value="0"></label>
+          <label>踢下线
+            <select id="bKick"><option value="1">是</option><option value="0">否</option></select>
+          </label>
+        </div>
+        <div class="row" style="margin-top:14px"><button class="danger" onclick="createBan()" id="bBtn">执行封禁</button></div>
+        <div id="bMsg" class="msg hide"></div>
+      </section>
+      <section>
+        <h2>封禁列表</h2>
+        <div class="row" style="margin-bottom:12px"><button class="ghost small" onclick="loadBans()">刷新列表</button></div>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>状态</th><th>类型</th><th>目标</th><th>用户名</th><th>原因</th><th>封禁时间</th><th>到期</th><th>操作人</th><th>操作</th></tr></thead>
+            <tbody id="banRows"><tr><td colspan="9" class="muted">加载中...</td></tr></tbody>
+          </table>
+        </div>
+        <div id="banListMsg" class="msg hide"></div>
+      </section>
+    </div>
+
+    <!-- ============ 通关记录 ============ -->
+    <div id="tab-records" class="hide">
+      <section>
+        <h2>通关 / 行为记录</h2>
+        <p class="hint">「副本」= 通关记录；还可查团本、点券消费、对话等。时间留空表示不限。</p>
+        <div class="grid">
+          <label>记录类型<select id="rKind"></select></label>
+          <label>角色名<input id="rChar" placeholder="可留空"></label>
+          <label>账号<input id="rAccount" placeholder="用户名 或 dnf:..."></label>
+          <label>关键字<input id="rKeyword" placeholder="可留空"></label>
+          <label>开始时间<input id="rSince" placeholder="2026-10-01"></label>
+          <label>结束时间<input id="rUntil" placeholder="可留空"></label>
+          <label>条数<input id="rLimit" type="number" min="1" max="2000" value="200"></label>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <button onclick="queryRecords()" id="rBtn">查询</button>
+          <span class="muted" id="rMeta"></span>
+        </div>
+        <div id="rMsg" class="msg hide"></div>
+        <div class="scroll" style="margin-top:12px">
+          <table><thead id="recHead"></thead><tbody id="recRows"></tbody></table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============ 账号查询 ============ -->
+    <div id="tab-accounts" class="hide">
+      <section>
+        <h2>账号查询</h2>
+        <p class="hint">按用户名或角色名模糊搜索，点账号可看该账号下的角色。</p>
+        <p class="hint">
+          账号来自登录器的注册表（launcher_accounts）。留空直接搜会列出全部账号。<br>
+          <b>「黑钻」是账号级权益</b>，直接点每行后面的按钮即可开通/续期，不需要先找角色。
+        </p>
+        <div class="row">
+          <input id="aQuery" placeholder="用户名（留空=全部）" style="min-width:260px">
+          <button onclick="searchAccounts()" id="aBtn">搜索</button>
+        </div>
+        <div id="aMsg" class="msg hide"></div>
+        <div class="scroll" style="margin-top:12px">
+          <table>
+            <thead><tr><th>用户名</th><th>状态</th><th>最近登录IP</th><th>最近登录时间</th><th>账号主键</th><th>操作</th></tr></thead>
+            <tbody id="acctRows"><tr><td colspan="6" class="muted">点「搜索」列出账号</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============ 全服 / 批量 ============ -->
+    <div id="tab-batch" class="hide">
+      <section>
+        <h2>全服账号与角色</h2>
+        <p class="hint">扫描 <b>launcher_accounts</b> 里的全部账号，再逐个读取角色。结果缓存 60 秒。</p>
+        <div class="row">
+          <button onclick="loadAllCharacters(true)" id="acBtn">扫描全服</button>
+          <span class="muted" id="acInfo">点「扫描全服」开始</span>
+        </div>
+        <div id="acMsg" class="msg hide"></div>
+      </section>
+
+      <section>
+        <h2>批量发放</h2>
+        <p class="hint">先扫描全服名单；可只对勾选的角色发放，也可全服/每账号首个角色。任务在后台跑，下方显示进度。</p>
+        <div class="grid">
+          <label>发放范围
+            <select id="btScope">
+              <option value="all">全部角色</option>
+              <option value="selected">仅勾选的角色</option>
+              <option value="per_account">每个账号仅首个角色</option>
+            </select>
+          </label>
+          <label>发放内容
+            <select id="btKind" onchange="onBatchKind()">
+              <option value="cera">点券 / 代币 / 金币</option>
+              <option value="blackdiamond">黑钻（账号级）</option>
+              <option value="mail">物品 / 邮件</option>
+            </select>
+          </label>
+          <label id="btBdWrap" class="hide">黑钻天数<input id="btBdDays" type="number" min="1" max="3650" value="30"></label>
+          <label id="btCurWrap">币种
+            <select id="btCur">
+              <option value="cera">点券</option>
+              <option value="token_cera">代币券</option>
+              <option value="happy_token_cera">欢乐代币券</option>
+              <option value="gold">金币</option>
+            </select>
+          </label>
+          <label id="btAmtWrap">数量<input id="btAmount" type="number" min="1" value="1000"></label>
+          <label id="btModeWrap">方式
+            <select id="btMode">
+              <option value="add">加量</option>
+              <option value="set">设为（覆盖）</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="btMailWrap" class="hide">
+          <div class="grid" style="margin-top:12px">
+            <label>邮件标题<input id="btTitle" placeholder="GM 发放"></label>
+            <label>附带金币<input id="btGold" type="number" min="0" value="0"></label>
+          </div>
+          <label style="margin-top:10px">正文<textarea id="btBody" rows="2" style="width:100%" placeholder="请在邮箱中领取。"></textarea></label>
+          <p class="hint" style="margin-top:10px">
+            物品用「物品与邮件」页的待发清单：先去那边把物品加进去，下面的按钮会把该清单发给所有目标。
+          </p>
+          <div class="row">
+            <span class="muted">当前待发清单：</span><span id="btCartInfo" class="muted">（空）</span>
+            <button class="ghost small" onclick="goTab('mail')">去添加物品</button>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:16px">
+          <button class="danger" onclick="startBatch()" id="btBtn">开始批量发放</button>
+          <span class="muted" id="btPre">已选 0 个角色</span>
+        </div>
+        <div id="btMsg" class="msg hide"></div>
+        <div id="btProgress" class="hide" style="margin-top:14px">
+          <div style="background:var(--panel2);border:1px solid var(--line);border-radius:8px;height:22px;overflow:hidden">
+            <div id="btBar" style="height:100%;width:0;background:var(--accent);transition:width .3s"></div>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <span id="btStat" class="muted"></span>
+            <button class="ghost small" onclick="loadBatchJob()">刷新进度</button>
+            <button class="ghost small" onclick="showBatchFailures()">看失败明细</button>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>角色列表</h2>
+        <div class="row" style="margin-bottom:10px">
+          <input id="acFilter" placeholder="按角色名/账号过滤" style="min-width:240px" oninput="renderAllCharacters()">
+          <button class="ghost small" onclick="selectAllChars(true)">全选（当前筛选）</button>
+          <button class="ghost small" onclick="selectAllChars(false)">清空选择</button>
+          <span class="muted" id="acCount"></span>
+        </div>
+        <div class="scroll" style="max-height:56vh">
+          <table>
+            <thead><tr><th style="width:34px"></th><th>序号</th><th>角色名</th><th>账号</th><th>等级</th><th>点券</th><th>金币</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="acRows"><tr><td colspan="9" class="muted">先扫描全服</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    </main>
+  </div>
+</div>
+
+<div id="modal" class="ov hide" onclick="if(event.target===this)closeModal()"><div class="box" id="modalBox"></div></div>
+
+<script>
+"use strict";
+
+/* ================= 基础 ================= */
+async function api(path, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({"Content-Type":"application/json"}, opts.headers||{});
+  const res = await fetch(path, opts);
+  let body = null;
+  try { body = await res.json(); } catch(e) { body = null; }
+  if (res.status === 401) { showLogin(); throw new Error("未登录或登录已过期"); }
+  if (!body) throw new Error("服务器返回异常（HTTP " + res.status + "）");
+  if (body.ok === false) throw new Error(body.error || "操作失败");
+  return body.data;
+}
+const $ = id => document.getElementById(id);
+function show(el, text, kind) {
+  el.classList.remove("hide","ok","err","info");
+  el.classList.add(kind || "info");
+  el.textContent = text;
+}
+function hide(el){ el.classList.add("hide"); }
+function busy(btn, on, label){
+  if (on) { btn.dataset.t = btn.textContent; btn.innerHTML = '<span class="spin"></span> ' + (label||"处理中"); btn.disabled = true; }
+  else { btn.textContent = btn.dataset.t || btn.textContent; btn.disabled = false; }
+}
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function short(s){ s = String(s==null?"":s); return s.length > 28 ? s.slice(0,14) + "…" + s.slice(-10) : s; }
+function fmtTime(t){ if(!t) return ""; const d=new Date(t); if(isNaN(d)) return String(t);
+  const p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes()); }
+function closeModal(){ $("modal").classList.add("hide"); $("modalBox").innerHTML=""; }
+
+/* ================= 登录 ================= */
+function showLogin(){ $("login").classList.remove("hide"); $("app").classList.add("hide"); }
+function showApp(){ $("login").classList.add("hide"); $("app").classList.remove("hide"); }
+async function doLogin(){
+  const btn = $("loginBtn"), msg = $("loginMsg"); hide(msg); busy(btn, true, "登录中");
+  try {
+    const d = await api("/api/login", {method:"POST", body: JSON.stringify({password: $("pwd").value})});
+    if (d && d.title) { $("title").textContent = d.title; $("loginTitle").textContent = d.title; }
+    showApp(); await refreshStatus(); ensureRecordKinds();
+  } catch(e) { show(msg, e.message, "err"); }
+  finally { busy(btn, false); }
+}
+async function doLogout(){ try { await api("/api/logout",{method:"POST"}); } catch(e){} showLogin(); }
+$("pwd").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+
+/* ================= 标签 ================= */
+// 顶部导航可切换的页面清单（新增/删除页面时**必须同步这里**）。
+const TAB_PAGES = ["overview","accounts","character","batch","mail","cera","bans","records"];
+
+// 侧边栏 tab 名 ↔ 页面容器 id="tab-<name>" 必须一一对应。
+// ⚠ 曾经踩过的坑：删掉某个页面后忘了从这张表里去掉，$() 返回 null，
+//   null.classList 抛异常 → 整函数中断，后面的逻辑（含数据加载）全部不执行。
+//   现在改成**先判空再操作**，并且由 TestTabTargetsExist 做构建期校验。
+function tab(name, btn){
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b === btn));
+  TAB_PAGES.forEach(t => {
+    const el = $("tab-" + t);
+    if (el) el.classList.toggle("hide", t !== name);
+  });
+  if (name === "bans") loadBans();
+  if (name === "records") ensureRecordKinds();
+  if (name === "accounts" && !$("acctRows").dataset.loaded) searchAccounts();
+  if (name === "batch") { onBatchKind(); updateBatchPre(); }
+  // 角色管理：进页面自动列出全部账号
+  if (name === "character" && !$("acctList").dataset.loaded) loadAccountList();
+}
+function goTab(name){ tab(name, document.querySelector('nav button[data-tab="'+name+'"]')); }
+
+/* ================= 概览 ================= */
+async function refreshStatus(){
+  try {
+    const d = await api("/api/status");
+    const on = !!d.game_online;
+    $("dot").className = "dot " + (on ? "on" : "off");
+    const st = d.status || {};
+    $("pOnline").textContent = st.online_characters != null ? st.online_characters : "-";
+    $("pBans").textContent = (d.ban_active != null ? d.ban_active : "-") + " / " + (d.ban_total != null ? d.ban_total : "-");
+    const g = $("ovGrid");
+    if (!on) {
+      g.innerHTML = '<div class="msg err">无法连接游戏服务端管理口：<br>' + esc(d.game_error||"") + '</div>';
+    } else {
+      g.innerHTML = [
+        ["游戏服务端", '<span class="tag on">运行中</span>'],
+        ["在线角色", st.online_characters != null ? st.online_characters : "-"],
+        ["频道数", d.channels != null ? (d.channels + (d.ordinary_channels != null ? "（常驻 " + d.ordinary_channels + "）" : "")) : "-"],
+        ["等级上限", st.level_cap != null ? st.level_cap : "-"],
+        ["数据库就绪", (st.repository_ready ? '<span class="tag on">是</span>' : '<span class="tag off">否</span>')],
+        ["生效封禁", (d.ban_active != null ? d.ban_active : "-")],
+        ["历史封禁", (d.ban_total != null ? d.ban_total : "-")]
+      ].map(x => '<div class="pill" style="padding:10px 14px">' + x[0] + '<br><b style="font-size:16px">' + x[1] + '</b></div>').join("");
+    }
+  } catch(e) { $("dot").className = "dot off"; }
+}
+
+/* ================= 角色管理（左侧账号 + 角色列表） ================= */
+let currentChar = null;
+let accountList = [], characterList = [], currentAccount = null;
+
+// 打开页面即自动列出全部账号
+async function loadAccountList(){
+  const btn = $("acctBtn"), msg = $("acctListMsg"); hide(msg); busy(btn, true, "刷新中");
+  try {
+    const kw = ($("acctSearch").value || "").trim();
+    const rows = await api("/api/accounts?limit=300&q=" + encodeURIComponent(kw));
+    accountList = rows || [];
+    $("acctList").dataset.loaded = "1";
+    renderAccountList();
+    if (!accountList.length) show(msg, "没有账号（留空可列出全部）", "info");
+  } catch(e) { show(msg, "❌ " + e.message, "err"); $("acctList").innerHTML = '<div class="muted" style="padding:10px">加载失败</div>'; }
+  finally { busy(btn, false); }
+}
+
+function renderAccountList(){
+  const box = $("acctList");
+  if (!accountList.length){ box.innerHTML = '<div class="muted" style="padding:10px">没有账号</div>'; return; }
+  box.innerHTML = accountList.map(a => {
+    const sel = currentAccount && currentAccount.account_id === a.account_id ? " sel" : "";
+    const last = a.last_login_at ? fmtTime(a.last_login_at) : "未登录过";
+    return '<div class="acct-row' + sel + '" onclick=\'selectAccount(' + JSON.stringify(a) + ')\'>' +
+      '<div class="u">' + esc(a.username || "(无用户名)") + '</div>' +
+      '<div class="m">' + esc(a.state || "") + ' · 最近登录 ' + last + '</div>' +
+      '</div>';
+  }).join("");
+}
+
+async function selectAccount(a){
+  currentAccount = a;
+  renderAccountList();
+  $("charCards").innerHTML = '<div class="muted" style="padding:10px">读取角色中...</div>';
+  $("charCount").textContent = "";
+  const msg = $("chMsg"); hide(msg);
+  try {
+    // 两个来源合并：原生通道给金币/点券/在线，GM Tool 通道给「职业名 / 槽位」
+    const key = a.username || a.account_id;
+    const res = await Promise.all([
+      api("/api/characters?q=" + encodeURIComponent(key)),
+      api("/api/accounts/" + encodeURIComponent(a.account_id) + "/characters").catch(() => [])
+    ]);
+    const rich = {};
+    (res[1] || []).forEach(c => { rich[String(c.character_id)] = c; });
+    characterList = (res[0].characters || []).map(c => {
+      const r = rich[String(c.character_id)] || {};
+      return Object.assign({}, c, {
+        profession_name: r.profession_name || "",
+        slot: (r.slot === undefined ? null : r.slot)
+      });
+    });
+    renderCharCards();
+    if (!characterList.length){
+      $("charCards").innerHTML = '<div class="muted" style="padding:10px">该账号下还没有角色</div>';
+    }
+  } catch(e) {
+    characterList = [];
+    $("charCards").innerHTML = '<div class="muted" style="padding:10px">读取失败：' + esc(e.message) + '</div>';
+  }
+}
+
+function renderCharCards(){
+  $("charCount").textContent = characterList.length ? ("（" + characterList.length + "）") : "";
+  if (!characterList.length){ $("charCards").innerHTML = '<div class="muted" style="padding:10px">无角色</div>'; return; }
+  $("charCards").innerHTML = characterList.map(c => {
+    const sel = currentChar && String(currentChar.character_id) === String(c.character_id) ? " sel" : "";
+    const sub = esc(c.profession_name || "职业未知") + (c.slot !== null && c.slot !== undefined ? ' · #' + c.slot : "");
+    return '<div class="charcard' + sel + '" onclick=\'selectChar(' + JSON.stringify(c) + ')\'>' +
+      '<div class="n">' + esc(c.name) + (c.online ? ' <span class="tag on">在线</span>' : '') +
+        '<span class="lvbadge">Lv.' + c.level + '</span></div>' +
+      '<div class="s">' + sub + ' · 金币 ' + (c.gold||0) + ' · 点券 ' + (c.cera||0) + '</div>' +
+      '</div>';
+  }).join("");
+}
+
+function selectChar(c){
+  currentChar = c;
+  renderCharCards();
+  $("chEmpty").classList.add("hide");
+  $("chPanel").classList.remove("hide");
+  $("chTitle").textContent = c.name + "（ID " + c.character_id + "）" + (c.online ? " · 在线" : " · 离线");
+  $("bdMsg").textContent; hide($("bdMsg")); hide($("lvMsg")); hide($("spMsg")); hide($("jobMsg")); hide($("dgMsg")); hide($("eqMsg"));
+  hide($("cpRaidMsg")); $("cpRaidGroups").innerHTML = '<div class="muted">切到此页后自动读取</div>';
+  $("lvLevel").value = c.level;
+  // 切回「角色属性」子标签，并回填该角色的职业/转职/觉醒
+  cpTab("attr", document.querySelector('.subtabs button[data-cp="attr"]'));
+  loadCharacterJob();
+  queryBD();
+}
+
+/* ---- 角色面板子标签 ---- */
+function cpTab(name, btn){
+  document.querySelectorAll(".subtabs button").forEach(b => b.classList.toggle("active", b === btn));
+  ["attr","bag","mail","quest","send","raid"].forEach(t => {
+    const el = $("cp-" + t);
+    if (el) el.classList.toggle("hide", t !== name);
+  });
+  if (name === "bag")   cpLoadInventory();
+  if (name === "mail")  cpLoadMailbox();
+  if (name === "quest") cpLoadQuests();
+  if (name === "send")  $("cpSendWho").textContent = currentChar ? currentChar.name : "";
+  if (name === "raid")  cpLoadRaidCounters();
+}
+
+let cpRaidState = null;
+
+async function cpLoadRaidCounters(){
+  if (!currentChar) return;
+  const btn = $("cpRaidRefreshBtn"), msg = $("cpRaidMsg");
+  hide(msg); busy(btn, true, "读取中");
+  try {
+    const d = await api("/api/character/raid-counters?id=" + encodeURIComponent(currentChar.character_id));
+    cpRaidState = d;
+    $("cpRaidWho").textContent = "当前角色：" + (d.character_name || currentChar.name) + "（ID " + d.character_id + "）";
+    renderRaidCounters();
+  } catch(e) {
+    $("cpRaidGroups").innerHTML = '<div class="msg err">读取团本次数失败：' + esc(e.message) + '</div>';
+  } finally {
+    busy(btn, false);
+  }
+}
+
+function renderRaidCounters(){
+  const box = $("cpRaidGroups");
+  const groups = cpRaidState && cpRaidState.groups ? cpRaidState.groups : [];
+  if (!groups.length){
+    box.innerHTML = '<div class="muted">没有可显示的团本次数</div>';
+    return;
+  }
+  box.innerHTML = groups.map(group => {
+    const cards = (group.counters || []).map(counter => {
+      const scopeName = counter.scope === "account" ? "账号级" : "角色级";
+      const scopeClass = counter.scope === "account" ? "warn" : "on";
+      const used = Number(counter.used || 0), limit = Number(counter.limit || 0), remaining = Number(counter.remaining || 0);
+      const bonus = Number(counter.bonus || 0) ? ' · 额外 +' + counter.bonus : '';
+      const stateText = used >= limit ? '<span class="tag off">已用尽</span>' : '<span class="tag on">可入场</span>';
+      const args = "'" + group.raid + "','" + counter.id + "','" + counter.label + "','" + counter.scope + "'";
+      return '<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:10px;background:var(--panel2)">' +
+        '<div class="row" style="justify-content:space-between;margin-bottom:6px">' +
+          '<b>' + esc(counter.label) + '</b><span class="tag ' + scopeClass + '">' + scopeName + '</span>' +
+        '</div>' +
+        '<div class="muted" style="margin-bottom:8px">已用 <b>' + used + ' / ' + limit + '</b> · 剩余 <b>' + remaining + '</b>' + bonus + ' ' + stateText + '</div>' +
+        '<button class="small" onclick="cpResetRaidCounter(' + args + ',this)">重置' + esc(counter.label) + '</button>' +
+        '</div>';
+    }).join("");
+    return '<section style="margin:0;padding:14px">' +
+      '<h2 style="font-size:15px">' + esc(group.name || group.raid) + '</h2>' +
+      '<p class="hint" style="margin-bottom:4px">安徒恩 / 卢克 / 超时空三项计数独立重置</p>' +
+      cards + '</section>';
+  }).join("");
+}
+
+async function cpResetRaidCounter(raid, counter, label, scope, btn){
+  if (!currentChar) return;
+  const scopeText = scope === "account" ? "账号级，会影响同账号其他角色" : "角色级，仅影响当前角色";
+  if (!confirm("确定重置【" + currentChar.name + "】的" + label + "？\n" + scopeText)) return;
+  const msg = $("cpRaidMsg"); hide(msg); busy(btn, true, "重置中");
+  try {
+    const d = await api("/api/character/raid-counters/reset", {method:"POST", body: JSON.stringify({
+      character_id: currentChar.character_id,
+      raid: raid,
+      counter: counter
+    })});
+    if (d.state) {
+      cpRaidState = d.state;
+      renderRaidCounters();
+    } else {
+      await cpLoadRaidCounters();
+    }
+    let text = "✅ 已重置 " + label;
+    text += "\n在线刷新：" + (d.refreshed ? "已推送团本次数刷新包" : (d.online ? "角色在线，但刷新包发送失败" : "角色离线，下次登录生效"));
+    if (d.refresh_error) text += "\n刷新错误：" + d.refresh_error;
+    show(msg, text, "ok");
+  } catch(e) {
+    show(msg, "❌ " + e.message, "err");
+  } finally {
+    busy(btn, false);
+  }
+}
+
+async function queryBD(){
+  if (!currentChar) return;
+  const msg = $("bdMsg"); hide(msg);
+  try {
+    const d = await api("/api/character/black-diamond?id=" + encodeURIComponent(currentChar.character_id));
+    const days = d.remaining_days != null ? d.remaining_days : 0;
+    show(msg, d.active
+      ? "✅ 黑钻生效中：剩余 " + days + " 天（到期 " + fmtTime(new Date((d.expires_at||0)*1000)) + "）"
+      : "当前未开通黑钻（或已过期）", d.active ? "ok" : "info");
+  } catch(e) { show(msg, "查询失败：" + e.message, "err"); }
+}
+async function openBD(){
+  if (!currentChar) return;
+  const btn = $("bdBtn"), msg = $("bdMsg"); hide(msg); busy(btn, true, "开通中");
+  try {
+    const d = await api("/api/character/black-diamond", {method:"POST", body: JSON.stringify({
+      character_id: currentChar.character_id, days: parseInt($("bdDays").value,10) || 30 })});
+    let t = "✅ 黑钻已开通/续期 " + d.days + " 天（账号级）";
+    t += "\n到期时间：" + fmtTime(new Date((d.expires_at||0)*1000));
+    t += "\n在线刷新：" + (d.refreshed ? "已下发刷新包" : (d.online ? "在线但刷新失败" : "角色离线，下次登录生效"));
+    if (d.refresh_error) t += "\n刷新错误：" + d.refresh_error;
+    if (d.fatigue_limit) t += "\n疲劳上限：" + d.fatigue_limit;
+    show(msg, t, "ok");
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+
+async function doSetLevel(){
+  if (!currentChar) return;
+  const btn = $("lvBtn"), msg = $("lvMsg"); hide(msg); busy(btn, true, "设置中");
+  try {
+    const d = await api("/api/character/level", {method:"POST", body: JSON.stringify({
+      character_id: currentChar.character_id, level: parseInt($("lvLevel").value,10) || 0 })});
+    show(msg, "✅ 等级 " + d.previous_level + " → " + d.level + "\n" + refreshText(d), "ok");
+    currentChar.level = d.level;
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+
+async function doSetSPTP(){
+  if (!currentChar) return;
+  const btn = $("spBtn"), msg = $("spMsg"); hide(msg); busy(btn, true, "设置中");
+  try {
+    const d = await api("/api/character/sptp", {method:"POST", body: JSON.stringify({
+      character_id: currentChar.character_id,
+      sp: parseInt($("spVal").value,10),
+      tp: parseInt($("tpVal").value,10),
+      extend_total: $("spExtend").checked })});
+    show(msg, "✅ SP 总 " + d.total_sp + " / 剩余 " + d.remaining_sp + "　TP 总 " + d.total_tp + " / 剩余 " + d.remaining_tp + "\n" + refreshText(d), "ok");
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+
+async function doSetJob(){
+  if (!currentChar) return;
+  const btn = $("jobBtn"), msg = $("jobMsg"); hide(msg); busy(btn, true, "设置中");
+  try {
+    const d = await api("/api/character/job", {method:"POST", body: JSON.stringify({
+      character_id: currentChar.character_id,
+      job: parseInt($("jobVal").value,10)||0,
+      first_grow: parseInt($("jobF").value,10)||0,
+      second_grow: parseInt($("jobS").value,10)||0 })});
+    show(msg, "✅ 职业已设置：job=" + d.job + " 转职=" + d.grow_type + "\n" + refreshText(d), "ok");
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+
+async function doUnlockDungeons(mode){
+  if (!currentChar) return;
+  const btn = $("dgBtn"), msg = $("dgMsg"); hide(msg);
+  if (!confirm("确定为角色【" + currentChar.name + "】解锁全部副本（按最高难度）？")) return;
+  busy(btn, true, "解锁中");
+  try {
+    const d = await api("/api/character/dungeons-unlock", {method:"POST", body: JSON.stringify({
+      character_id: currentChar.character_id, mode: mode })});
+    show(msg, "✅ 已提交 " + d.count + " 个副本权限（共发送 " + (d.submitted||0) + " 条）\n" + refreshText(d), "ok");
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+
+async function doUnlockEquipSlots(){
+  if (!currentChar) return;
+  const btn = $("eqBtn"), msg = $("eqMsg"); hide(msg); busy(btn, true, "解锁中");
+  try {
+    const d = await api("/api/character/equip-slots-unlock", {method:"POST", body: JSON.stringify({
+      character_id: currentChar.character_id })});
+    show(msg, "✅ 装备槽 " + d.before + " → " + d.after + "\n" + refreshText(d), "ok");
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+
+function refreshText(d){
+  if (d.refreshed) return "在线刷新：已下发原生刷新包（客户端立即生效）";
+  if (d.online) return "在线刷新：失败" + (d.refresh_error ? "（" + d.refresh_error + "）" : "");
+  return "角色离线：下次登录时加载";
+}
+
+/* ================= 物品与邮件 ================= */
+let itemOffset = 0, itemLimit = 50, cart = [];
+
+async function searchItems(dir){
+  const btn = $("itBtn"), msg = $("itMsg"); hide(msg);
+  if (dir === -1) itemOffset = Math.max(0, itemOffset - itemLimit);
+  else if (dir === 1) itemOffset = itemOffset + itemLimit;
+  else itemOffset = 0;
+  busy(btn, true, "搜索中");
+  try {
+    const params = new URLSearchParams({
+      q: $("itQ").value.trim(),
+      kind: $("itKind").value,
+      rarity: $("itRarity").value,
+      min_level: $("itMinLv").value || "0",
+      limit: String(itemLimit),
+      offset: String(itemOffset)
+    });
+    const d = await api("/api/items?" + params.toString());
+    const items = d.items || [];
+    $("itRows").innerHTML = items.length ? items.map(it =>
+      '<tr><td class="mono">' + it.item_id + '</td><td>' + esc(it.name) + '</td><td class="muted">' + esc(it.kind) + (it.equipment_type ? "/" + esc(it.equipment_type) : "") + '</td>' +
+      '<td>' + (it.rarity != null ? it.rarity : "-") + '</td><td>' + (it.minimum_level||0) + '</td>' +
+      '<td><button class="ghost small" onclick="showItem(' + it.item_id + ')">详情</button> ' +
+      '<button class="small" onclick=\'addToCart(' + JSON.stringify(it) + ')\'>发放</button> ' +
+      '<button class="ghost small" onclick="fillRichItem(' + it.item_id + ')">高级</button></td></tr>'
+    ).join("") : '<tr><td colspan="6" class="muted">没有找到物品</td></tr>';
+    $("itPageInfo").textContent = "共 " + (d.total||0) + " 条，当前 " + (itemOffset+1) + " - " + (itemOffset + items.length);
+    show(msg, "找到 " + (d.total||0) + " 条", "ok");
+  } catch(e) { $("itRows").innerHTML = '<tr><td colspan="6" class="muted">搜索失败</td></tr>'; show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+
+async function showItem(id){
+  $("modal").classList.remove("hide");
+  $("modalBox").innerHTML = '<p class="muted">加载中...</p>';
+  try {
+    const d = await api("/api/items/" + id);
+    const it = d.item || {};
+    let html = '<h2 style="margin-top:0;font-size:16px">' + esc(it.name) + ' <span class="muted mono">#' + it.item_id + '</span></h2>';
+    html += '<div class="kv">';
+    const kv = [["类型", it.kind + (it.equipment_type ? " / " + it.equipment_type : "")], ["稀有度", it.rarity],
+      ["需求等级", it.minimum_level], ["堆叠上限", it.stack_limit], ["绑定", it.attach_type],
+      ["价格", it.price], ["可穿职业", (it.usable_jobs||[]).join(", ")], ["PVF 路径", it.pvf_path]];
+    kv.forEach(x => { if (x[1] !== undefined && x[1] !== null && x[1] !== "") html += '<div class="k">' + x[0] + '</div><div>' + esc(x[1]) + '</div>'; });
+    html += '</div>';
+    if (d.basic_explain || d.detail_explain || d.explain) {
+      html += '<h2 style="font-size:14px;margin-top:16px">物品说明</h2><div class="muted" style="white-space:pre-wrap">' +
+        esc(d.basic_explain || "") + (d.detail_explain ? "\n" + esc(d.detail_explain) : "") + (d.explain ? "\n" + esc(d.explain) : "") + '</div>';
+    }
+    if (d.attributes && d.attributes.length) {
+      html += '<h2 style="font-size:14px;margin-top:16px">属性</h2><div class="kv">' +
+        d.attributes.map(a => '<div class="k">' + esc(a.name) + '</div><div>' + esc(a.value) + '</div>').join("") + '</div>';
+    }
+    html += '<div class="row" style="margin-top:18px"><button onclick=\'addToCart(' + JSON.stringify(it) + ');closeModal()\'>加入待发列表</button>' +
+            '<button class="ghost" onclick="closeModal()">关闭</button></div>';
+    $("modalBox").innerHTML = html;
+  } catch(e) { $("modalBox").innerHTML = '<p class="msg err">' + esc(e.message) + '</p><button class="ghost" onclick="closeModal()">关闭</button>'; }
+}
+
+function addToCart(it){
+  if (cart.length >= 10) { alert("最多只能加 10 件物品（服务端限制）"); return; }
+  cart.push({ item_id: it.item_id, name: it.name, kind: it.kind, count: 1, bind: false, attr: "none", reinforce: 0, amplify_type: 1, amplify_level: 0 });
+  renderCart();
+}
+function removeCart(i){ cart.splice(i,1); renderCart(); }
+function clearCart(){ cart = []; renderCart(); }
+function renderCart(){
+  // 待发清单同时渲染在「物品与邮件」页和「角色管理 → 发放物品」页，用 class 一起写
+  const boxes = document.querySelectorAll(".cart-rows");
+  if (!boxes.length) return;
+  let html;
+  if (!cart.length) {
+    html = '<tr><td colspan="7" class="muted">从物品搜索结果点「发放」加入</td></tr>';
+    boxes.forEach(tb => { tb.innerHTML = html; });
+    return;
+  }
+  html = cart.map((c,i) => {
+    const isEquip = c.kind === "equipment";
+    return '<tr><td class="mono">' + c.item_id + '</td><td>' + esc(c.name) + '</td>' +
+      '<td><input type="number" min="1" value="' + c.count + '" style="width:70px" onchange="cart[' + i + '].count=Math.max(1,parseInt(this.value)||1)"></td>' +
+      '<td><input type="checkbox" ' + (c.bind?"checked":"") + ' style="width:auto" onchange="cart[' + i + '].bind=this.checked"></td>' +
+      '<td>' + (isEquip
+        ? '<select onchange="cart[' + i + '].attr=this.value;renderCart()" style="width:auto">' +
+          '<option value="none"' + (c.attr==="none"?" selected":"") + '>无</option>' +
+          '<option value="reinforce"' + (c.attr==="reinforce"?" selected":"") + '>强化</option>' +
+          '<option value="amplify"' + (c.attr==="amplify"?" selected":"") + '>增幅</option></select>'
+        : '<span class="muted">—</span>') + '</td>' +
+      '<td>' + (isEquip && c.attr==="reinforce"
+        ? '<input type="number" min="0" max="31" value="' + c.reinforce + '" style="width:70px" title="强化等级 0-31" onchange="cart[' + i + '].reinforce=parseInt(this.value)||0">'
+        : (isEquip && c.attr==="amplify"
+          ? '<select style="width:auto" onchange="cart[' + i + '].amplify_type=parseInt(this.value)">' +
+            [["1","力量"],["2","智力"],["3","体力"],["4","精神"]].map(o => '<option value="'+o[0]+'"'+(c.amplify_type==+o[0]?" selected":"")+'>'+o[1]+'</option>').join("") +
+            '</select> <input type="number" min="0" max="31" value="' + c.amplify_level + '" style="width:66px" title="增幅等级 0-31" onchange="cart[' + i + '].amplify_level=parseInt(this.value)||0">'
+          : '<span class="muted">—</span>')) + '</td>' +
+      '<td><button class="ghost small" onclick="removeCart(' + i + ')">移除</button></td></tr>';
+  }).join("");
+  boxes.forEach(tb => { tb.innerHTML = html; });
+}
+
+async function sendMail(){
+  const btn = $("mlBtn"), msg = $("mlMsg"); hide(msg);
+  const who = $("mlChar").value.trim();
+  if (!who) { show(msg, "请填写收件角色（账号或角色名）", "err"); return; }
+  busy(btn, true, "发送中");
+  try {
+    const attachments = cart.map(c => ({
+      item_id: c.item_id, count: c.count, bind: c.bind,
+      reinforce_level: c.attr === "reinforce" ? c.reinforce : 0,
+      amplify_level: c.attr === "amplify" ? c.amplify_level : 0,
+      amplify_type: c.attr === "amplify" ? c.amplify_type : 0
+    }));
+    const d = await api("/api/mail", {method:"POST", body: JSON.stringify({
+      character: who,
+      title: $("mlTitle").value.trim() || "GM 发放",
+      body: $("mlBody").value.trim() || "请在邮箱中领取。",
+      gold: parseInt($("mlGold").value,10) || 0,
+      attachments: attachments
+    })});
+    let t = "✅ 邮件已发送给【" + d.recipient_name + "】（ID " + d.recipient_character_id + "）";
+    t += "\n邮件 ID：" + d.mail_id;
+    t += "\n在线刷新：" + (d.refreshed ? "已推送未读提示与邮箱刷新" : (d.online ? "在线但刷新失败" : "角色离线，下次打开邮箱可见"));
+    if (d.refresh_error) t += "\n刷新错误：" + d.refresh_error;
+    show(msg, t, "ok");
+    clearCart();
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+
+/* ================= 点券 ================= */
+async function grantCera(){
+  const btn = $("cBtn"), msg = $("cMsg"); hide(msg); busy(btn, true, "发放中");
+  try {
+    const d = await api("/api/cera", {method:"POST", body: JSON.stringify({
+      character_name: $("cName").value.trim(),
+      account_id: $("cAccount").value.trim(),
+      currency: $("cCur").value,
+      mode: $("cMode").value,
+      amount: parseInt($("cAmount").value, 10) || 0
+    })});
+    show(msg, "✅ " + d.biz + "：" + d.currency + "  " + d.before + " → " + d.after, "ok");
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+async function queryWallet(){
+  const btn = $("cBtn"), msg = $("cMsg"); hide(msg);
+  const name = $("cName").value.trim();
+  if (!name) { show(msg, "请先填角色名再查询余额", "err"); return; }
+  busy(btn, true, "查询中");
+  try {
+    const d = await api("/api/wallet/query", {method:"POST", body: JSON.stringify({character_name:name})});
+    show(msg, "点券：" + (d.cera||0) + "　代币券：" + (d.token_cera||0) + "　欢乐代币券：" + (d.happy_token_cera||0) + "　金币：" + (d.gold||0), "ok");
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+
+/* ================= 封禁 ================= */
+async function createBan(){
+  const btn = $("bBtn"), msg = $("bMsg"); hide(msg);
+  if (!$("bTarget").value.trim()) { show(msg, "请填写封禁目标", "err"); return; }
+  busy(btn, true, "执行中");
+  try {
+    const d = await api("/api/bans", {method:"POST", body: JSON.stringify({
+      target_type: $("bType").value, target: $("bTarget").value.trim(),
+      reason: $("bReason").value.trim(), days: parseInt($("bDays").value,10) || 0,
+      kick: $("bKick").value === "1" })});
+    let t = "✅ 已封禁：" + d.ban_type + " = " + d.ban_value + (d.days > 0 ? "（" + d.days + " 天）" : "（永久）");
+    if (d.kicked) t += "\n已踢下线 " + d.kicked + " 个连接";
+    if (d.kick_error) t += "\n踢下线失败：" + d.kick_error;
+    show(msg, t, "ok");
+    loadBans();
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+async function loadBans(){
+  const tb = $("banRows"), msg = $("banListMsg"); hide(msg);
+  tb.innerHTML = '<tr><td colspan="9" class="muted">加载中...</td></tr>';
+  try {
+    const rows = await api("/api/bans?limit=300");
+    if (!rows.length) { tb.innerHTML = '<tr><td colspan="9" class="muted">暂无封禁记录</td></tr>'; return; }
+    tb.innerHTML = rows.map(function(r){
+      const tag = r.active ? '<span class="tag off">生效中</span>' : (r.revoked_at ? '<span class="tag">已解封</span>' : '<span class="tag">已过期</span>');
+      const op = (r.active ? '<button class="ghost small" onclick="unban(' + JSON.stringify(String(r.ban_type)) + ',' + JSON.stringify(String(r.ban_value)) + ')">解封</button> ' : '') +
+        '<button class="ghost small" onclick="kick(' + JSON.stringify(String(r.ban_type)) + ',' + JSON.stringify(String(r.ban_value)) + ')">踢下线</button>';
+      return '<tr><td>' + tag + '</td><td>' + esc(r.ban_type) + '</td><td class="mono">' + esc(short(r.ban_value)) + '</td><td>' + esc(r.username||"") + '</td><td>' + esc(r.reason||"") + '</td><td class="muted">' + fmtTime(r.banned_at) + '</td><td class="muted">' + (r.expires_at ? fmtTime(r.expires_at) : "永久") + '</td><td class="muted">' + esc(r.operator||"") + '</td><td>' + op + '</td></tr>';
+    }).join("");
+  } catch(e) { tb.innerHTML = '<tr><td colspan="9" class="muted">加载失败</td></tr>'; show(msg, "❌ " + e.message, "err"); }
+}
+async function unban(type, value){
+  const msg = $("banListMsg"); hide(msg);
+  if (!confirm("确定解除该封禁？\n" + type + " = " + value)) return;
+  try {
+    const d = await api("/api/bans", {method:"DELETE", body: JSON.stringify({ban_type:type, ban_value:value})});
+    let t = "✅ 已解封：" + type + " = " + value;
+    if (d.extra && d.extra.length) t += "\n同时解除：" + d.extra.join("、");
+    show(msg, t, "ok"); loadBans();
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+}
+async function kick(type, value){
+  const msg = $("banListMsg"); hide(msg);
+  try {
+    const d = await api("/api/bans/kick", {method:"POST", body: JSON.stringify({ban_type:type, ban_value:value})});
+    show(msg, "已踢下线 " + d.kicked + " 个连接", "ok");
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+}
+
+/* ================= 通关记录 ================= */
+let kindsLoaded = false;
+async function ensureRecordKinds(){
+  if (kindsLoaded) return;
+  try {
+    const m = await api("/api/records/meta");
+    const ks = (m && m.kinds) || [];
+    $("rKind").innerHTML = ks.length
+      ? ks.map(k => '<option value="' + esc(k.kind) + '">' + esc(k.title) + '（' + esc(k.kind) + '）</option>').join("")
+      : '<option value="dungeon">副本记录</option>';
+    if (ks.find(k => k.kind === "dungeon")) $("rKind").value = "dungeon";
+    $("rMeta").textContent = m && m.enabled ? "记录功能已开启" : "服务端未开启记录功能";
+    kindsLoaded = true;
+  } catch(e) { $("rKind").innerHTML = '<option value="dungeon">副本记录</option>'; }
+}
+async function queryRecords(){
+  const btn = $("rBtn"), msg = $("rMsg"); hide(msg); busy(btn, true, "查询中");
+  try {
+    const d = await api("/api/records/query", {method:"POST", body: JSON.stringify({
+      kind: $("rKind").value, character_name: $("rChar").value.trim(),
+      account_id: $("rAccount").value.trim(), keyword: $("rKeyword").value.trim(),
+      since: $("rSince").value.trim(), until: $("rUntil").value.trim(),
+      limit: parseInt($("rLimit").value, 10) || 200 })});
+    renderRecords(d);
+    show(msg, "✅ " + (d.title || d.kind) + "：返回 " + (d.count||0) + " 条（扫描 " + (d.scanned||0) + " 条" + (d.limited ? "，已达上限" : "") + "）", "ok");
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+// fmtDur 把秒数格式化成"1 分 30 秒"这种可读形式。
+function fmtDur(sec){
+  const n = parseInt(sec, 10);
+  if (isNaN(n) || n < 0) return "—";
+  if (n < 60) return n + " 秒";
+  const m = Math.floor(n / 60), s = n % 60;
+  if (m < 60) return m + " 分 " + s + " 秒";
+  return Math.floor(m / 60) + " 时 " + (m % 60) + " 分 " + s + " 秒";
+}
+
+// pickFirst 从记录里按优先级取第一个存在的字段值。
+function pickFirst(r, names){
+  for(const n of names){
+    if(r[n] !== undefined && r[n] !== null && r[n] !== "") return r[n];
+  }
+  return null;
+}
+
+function renderRecords(d){
+  const recs = (d && d.records) || [];
+  const kind = (d && d.kind) || "";
+  if (!recs.length) { $("recHead").innerHTML = ""; $("recRows").innerHTML = '<tr><td class="muted">没有符合条件的记录</td></tr>'; return; }
+
+  // 副本（通关）记录：只展示 通关时间 / 通关用时 / 无色晶体使用量 / 通关副本名
+  if (kind === "dungeon") {
+    $("recHead").innerHTML = "<tr><th>通关时间</th><th>通关用时</th><th>无色晶体使用量</th><th>通关副本名</th></tr>";
+    $("recRows").innerHTML = recs.map(r => {
+      const t = pickFirst(r, ["ts", "time", "recorded_at", "timestamp", "finished_at", "cleared_at"]);
+      const dur = pickFirst(r, ["elapsed_seconds", "duration_seconds", "elapsed"]);
+      const cube = pickFirst(r, ["colorless_spent"]);       // 服务端字段名，未消耗时不写该字段
+      const name = pickFirst(r, ["dungeon_name", "dungeon_id", "dungeon_path"]);
+      return "<tr><td>" + (t ? fmtTime(t) : "—") + "</td>" +
+        "<td class=\"dur\">" + fmtDur(dur) + "</td>" +
+        "<td>" + (cube === null ? "0" : cube) + "</td>" +
+        "<td>" + (name === null ? "—" : esc(String(name))) + "</td></tr>";
+    }).join("");
+    return;
+  }
+
+  // 其它类型：保持动态列
+  const cols = [];
+  recs.forEach(r => Object.keys(r).forEach(k => { if (cols.indexOf(k) < 0) cols.push(k); }));
+  $("recHead").innerHTML = "<tr>" + cols.map(c => "<th>" + esc(c) + "</th>").join("") + "</tr>";
+  $("recRows").innerHTML = recs.map(r => "<tr>" + cols.map(c => {
+    const v = r[c];
+    return "<td" + (typeof v === "string" ? "" : ' class="muted"') + ">" + esc(typeof v === "object" ? JSON.stringify(v) : (v===null||v===undefined?"":String(v))) + "</td>";
+  }).join("") + "</tr>").join("");
+}
+
+/* ================= 账号查询 ================= */
+async function searchAccounts(){
+  const btn = $("aBtn"), msg = $("aMsg"); hide(msg); busy(btn, true, "搜索中");
+  try {
+    const rows = await api("/api/accounts?limit=200&q=" + encodeURIComponent($("aQuery").value.trim()));
+    const tb = $("acctRows");
+    tb.dataset.loaded = "1";
+    if (!rows.length) { tb.innerHTML = '<tr><td colspan="6" class="muted">没有找到账号（换个用户名，或留空列出全部）</td></tr>'; return; }
+    tb.innerHTML = rows.map(r =>
+      '<tr><td><b>' + esc(r.username) + '</b></td><td>' + esc(r.state||"") + '</td>' +
+      '<td class="muted">' + esc(r.last_login_ip||"-") + '</td>' +
+      '<td class="muted">' + (r.last_login_at ? fmtTime(r.last_login_at) : "-") + '</td>' +
+      '<td class="mono">' + esc(short(r.account_id)) + '</td>' +
+      '<td><button class="small" onclick=\'accountBlackDiamond(' + JSON.stringify(String(r.username)) + ')\'>黑钻</button>' +
+      ' <button class="ghost small" onclick="openCharByName(' + JSON.stringify(String(r.username)) + ')">查角色</button>' +
+      ' <button class="ghost small" onclick=\'gotoCharTab(' + JSON.stringify(String(r.username)) + ',"bag")\'>背包</button>' +
+      ' <button class="ghost small" onclick=\'gotoCharTab(' + JSON.stringify(String(r.username)) + ',"mail")\'>邮箱</button>' +
+      ' <button class="ghost small" onclick=\'accountValue(' + JSON.stringify(String(r.username)) + ')\'>改数值</button></td></tr>'
+    ).join("");
+    show(msg, "共 " + rows.length + " 个账号", "ok");
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+async function openCharByName(name){
+  goTab("character");
+  $("acctSearch").value = name;
+  await loadAccountList();
+  const hit = accountList.find(a => String(a.username||"") === String(name)) || accountList[0];
+  if (hit) await selectAccount(hit);
+}
+
+/* ---- 账号级：黑钻 / 数值覆盖 ---- */
+async function accountBlackDiamond(account){
+  const days = prompt("为账号【" + account + "】开通 / 续期黑钻\n\n输入天数（默认 30，上限 3650，续期会在原到期时间上叠加）：", "30");
+  if (days === null) return;
+  const n = parseInt(days, 10);
+  if (!n || n < 1 || n > 3650) { alert("天数需在 1~3650 之间"); return; }
+  try {
+    const d = await api("/api/account/black-diamond", {method:"POST", body: JSON.stringify({account: account, days: n})});
+    alert("✅ 黑钻已开通 / 续期 " + d.days + " 天（账号级）\n\n账号：" + d.account +
+      "\n入口角色：" + d.via_character +
+      "\n到期时间：" + fmtTime(new Date((d.expires_at || 0) * 1000)) +
+      "\n在线刷新：" + (d.refreshed ? "已下发刷新包" : (d.online ? "在线但刷新失败" : "角色离线，下次登录生效")));
+  } catch(e) { alert("❌ " + e.message); }
+}
+
+async function accountValue(account){
+  const field = prompt("修改账号【" + account + "】的数值\n\n输入字段名：\n  cera                      = 点券\n  cargo_gold                = 货物金币\n  honor_experience          = 荣誉经验\n  growth_capsule_experience = 成长胶囊经验", "cera");
+  if (field === null) return;
+  const f = field.trim();
+  const nameMap = { cera:"点券", cargo_gold:"货物金币", honor_experience:"荣誉经验", growth_capsule_experience:"成长胶囊经验" };
+  if (!nameMap[f]) { alert("字段名不支持：" + f); return; }
+  const val = prompt("把【" + nameMap[f] + "】设为多少？\n\n⚠ 注意：这是**覆盖**（直接设成这个数），不是增加。\n如果该账号有角色在线，服务端会拒绝（409）。", "10000");
+  if (val === null) return;
+  const v = parseInt(val, 10) || 0;
+  try {
+    const d = await api("/api/account/value", {method:"POST", body: JSON.stringify({account: account, field: f, value: v})});
+    alert("✅ " + (d.field_name || nameMap[f]) + " 已设为 " + v + "\n账号：" + d.account);
+  } catch(e) { alert("❌ " + e.message); }
+}
+
+/* ================= 角色面板内：背包 / 邮箱 ================= */
+// firstArrayField 从响应对象里找出第一个数组字段（兼容服务端字段演进）。
+function firstArrayField(obj){
+  for (const k of Object.keys(obj || {})) if (Array.isArray(obj[k])) return { name: k, list: obj[k] };
+  return { name: "", list: [] };
+}
+
+// 背包/仓库：一次读取、按「容器」分组，界面用按钮切换分别查看。
+// 容器名是服务端返回的字符串（inventory / storage / …），所以这里**动态生成**按钮，
+// 不硬编码容器名 —— 换了服务端版本也不会漏。
+let cpBagItems = [], cpBagContainer = "__all__";
+
+async function cpLoadInventory(){
+  const btn=$("cpBagBtn"), msg=$("cpBagMsg"); hide(msg); busy(btn,true,"载入中");
+  $("cpBagRows").innerHTML = '<tr><td colspan="7" class="muted">读取中...</td></tr>';
+  if(!currentChar){ show(msg,"请先在左侧选择一个角色","err"); $("cpBagRows").innerHTML='<tr><td colspan="7" class="muted">未选角色</td></tr>'; return; }
+  try{
+    const d = await api("/api/character/inventory?id=" + encodeURIComponent(currentChar.character_id));
+    cpBagItems = d.items || [];
+    cpBagContainer = "__all__";
+    cpBuildBagFilters();
+    cpRenderBag();
+  }catch(e){ $("cpBagRows").innerHTML='<tr><td colspan="7" class="muted">读取失败</td></tr>'; show(msg,"❌ "+e.message,"err"); }
+  finally{ busy(btn,false); }
+}
+
+// 按返回数据里实际出现的容器动态生成筛选按钮
+function cpBuildBagFilters(){
+  const box = $("cpBagFilters");
+  const groups = {};
+  cpBagItems.forEach(i => { const c = String(i.container || "?"); groups[c] = (groups[c]||0) + 1; });
+  const names = Object.keys(groups).sort();
+  if(names.length <= 1){ box.innerHTML = ""; return; }   // 只有一个容器就不用筛了
+  const btn = (label, key, count) =>
+    '<button data-bag="' + esc(key) + '" class="' + (cpBagContainer===key?"active":"") +
+    '" onclick="cpSetBagContainer(this.dataset.bag,this)">' + esc(label) +
+    ' <span class="muted">' + count + '</span></button>';
+  box.innerHTML = btn("全部", "__all__", cpBagItems.length) +
+    names.map(n => btn(n, n, groups[n])).join("");
+}
+
+function cpSetBagContainer(key, btn){
+  cpBagContainer = key;
+  document.querySelectorAll("#cpBagFilters button").forEach(b => b.classList.toggle("active", b === btn));
+  cpRenderBag();
+}
+
+function cpRenderBag(){
+  const items = cpBagContainer === "__all__"
+    ? cpBagItems
+    : cpBagItems.filter(i => String(i.container || "?") === cpBagContainer);
+  const label = cpBagContainer === "__all__" ? "全部容器" : cpBagContainer;
+  $("cpBagInfo").textContent = "共 " + items.length + " 件（" + label + "）" +
+    (currentChar && currentChar.online ? " · 角色在线" : " · 角色离线");
+  if(!items.length){ $("cpBagRows").innerHTML='<tr><td colspan="7" class="muted">这里没有物品</td></tr>'; return; }
+  $("cpBagRows").innerHTML = items.map(i =>
+      '<tr><td>'+esc(i.container)+'</td><td>'+i.slot+'</td><td class="mono">'+i.item_id+'</td>'+
+      '<td>'+esc(i.name)+'</td><td>'+i.count+'</td>'+
+      '<td>'+(i.bind?'<span class="tag warn">已绑定</span>':'<span class="tag">可交易</span>')+'</td>'+
+      '<td><button class="ghost small" onclick=\'cpDelItem('+JSON.stringify(String(i.container))+','+JSON.stringify(String(i.key))+',0)\'>整格删除</button>'+
+      ' <button class="danger small" onclick=\'cpClearContainer('+JSON.stringify(String(i.container))+',true)\'>清空容器</button></td></tr>'
+    ).join("");
+}
+async function cpDelItem(container,key,count){
+  const msg=$("cpBagMsg"); hide(msg);
+  if(!confirm("确定删除该格物品？不可撤销。\n容器："+container+"\n（服务端：count=0 表示整格删除）")) return;
+  try{
+    await api("/api/character/inventory/delete",{method:"POST",body:JSON.stringify({
+      character_id: currentChar.character_id, container: container, key: key, count: count||0 })});
+    show(msg,"✅ 已删除","ok"); cpLoadInventory();
+  }catch(e){ show(msg,"❌ "+e.message,"err"); }
+}
+async function cpClearContainer(container){
+  const msg=$("cpBagMsg"); hide(msg);
+  if(!confirm("确定清空容器【"+container+"】的全部物品？不可撤销！")) return;
+  try{
+    await api("/api/character/inventory/clear",{method:"POST",body:JSON.stringify({
+      character_id: currentChar.character_id, container: container })});
+    show(msg,"✅ 已清空容器 "+container,"ok"); cpLoadInventory();
+  }catch(e){ show(msg,"❌ "+e.message,"err"); }
+}
+
+async function cpLoadMailbox(){
+  const btn=$("cpMailBtn"), msg=$("cpMailMsg"); hide(msg); busy(btn,true,"载入中");
+  $("cpMailRows").innerHTML = '<tr><td colspan="6" class="muted">读取中...</td></tr>';
+  if(!currentChar){ show(msg,"请先在左侧选择一个角色","err"); $("cpMailRows").innerHTML='<tr><td colspan="6" class="muted">未选角色</td></tr>'; return; }
+  if(currentChar.online) show(msg,"提示：删除邮件要求角色离线（服务端限制）；角色在线时删除会失败。","info");
+  try{
+    const d = await api("/api/character/mailbox?id=" + encodeURIComponent(currentChar.character_id));
+    const f = firstArrayField(d);
+    const mails = f.list || [];
+    $("cpMailInfo").textContent = "共 " + mails.length + " 封";
+    if(!mails.length){ $("cpMailRows").innerHTML='<tr><td colspan="6" class="muted">邮箱为空</td></tr>'; return; }
+    $("cpMailRows").innerHTML = mails.map(function(m){
+      const id = m.mail_id || m.id || "";
+      const atts = m.attachments || m.items || m.attachment_items || [];
+      const attText = (Array.isArray(atts) && atts.length)
+        ? atts.map(function(a){ return (a.name || a.item_name || ("#" + (a.item_id||a.id))) + "×" + (a.count||1); }).join("、")
+        : "—";
+      const claimed = (m.claimed !== undefined && m.claimed !== null) ? m.claimed : m.claim_state;
+      const st = claimed === true ? '<span class="tag on">已领取</span>'
+        : (claimed === false ? '<span class="tag warn">未领取</span>' : '<span class="tag">—</span>');
+      return '<tr><td class="mono">'+esc(short(id))+'</td><td>'+esc(m.title||m.subject||"")+'</td>'+
+        '<td class="muted">'+esc(m.sender||m.from||"")+'</td><td>'+esc(attText)+'</td><td>'+st+'</td>'+
+        '<td><button class="ghost small" onclick=\'cpDelMail('+JSON.stringify(String(id))+',false)\'>删除</button>'+
+        ' <button class="danger small" onclick=\'cpDelMail('+JSON.stringify(String(id))+',true)\'>强制</button></td></tr>';
+    }).join("");
+  }catch(e){ $("cpMailRows").innerHTML='<tr><td colspan="6" class="muted">读取失败</td></tr>'; show(msg,"❌ "+e.message,"err"); }
+  finally{ busy(btn,false); }
+}
+// 清空全部邮件 —— 服务端原生接口要求 confirm=true，这里也二次确认。
+async function cpClearMailbox(){
+  const btn=$("cpMailClearBtn"), msg=$("cpMailMsg"); hide(msg);
+  if(!currentChar){ show(msg,"请先在左侧选择一个角色","err"); return; }
+  const n = ($("cpMailInfo").textContent || "").trim();
+  if(!confirm("清空角色【" + currentChar.name + "】的**全部邮件**？\n\n" + n +
+      "\n· 这是不可撤销操作，邮件和里面的附件一起没\n· 和「强制删除」是同一个原生接口，但一次清光\n\n确定继续？")) return;
+  busy(btn, true, "清除中");
+  try{
+    await api("/api/character/mailbox/clear", {method:"POST",
+      body: JSON.stringify({ character_id: currentChar.character_id })});
+    show(msg, "✅ 已清空该角色全部邮件", "ok");
+    cpLoadMailbox();
+  }catch(e){ show(msg, "❌ " + e.message, "err"); }
+  finally{ busy(btn, false); }
+}
+
+async function cpDelMail(id, force){
+  const msg=$("cpMailMsg"); hide(msg);
+  if(!id){ show(msg,"该邮件没有可用的 mail_id，无法删除","err"); return; }
+  if(!confirm(force
+    ? "强制删除该邮件（跳过「未领取」检查）？不可撤销。"
+    : "删除该邮件？\n注意：只要这封邮件里还有未领取的金币或附件，服务端会拒绝整单（不是跳过）。")) return;
+  try{
+    await api("/api/character/mailbox/delete",{method:"POST",body:JSON.stringify({
+      character_id: currentChar.character_id, mail_ids: [id], force: !!force })});
+    show(msg,"✅ 已删除","ok"); cpLoadMailbox();
+  }catch(e){ show(msg,"❌ "+e.message,"err"); }
+}
+
+/** 从别的页面跳过来：切到角色管理 → 选中该账号第一个角色 → 打开指定子标签 */
+async function gotoCharTab(name, cp){
+  goTab("character");
+  await openCharByName(name);
+  if (characterList.length){
+    selectChar(characterList[0]);
+    cpTab(cp, document.querySelector('.subtabs button[data-cp="'+cp+'"]'));
+  }
+}
+
+/* ================= 角色面板内：发放物品 ================= */
+let cpItemOffset = 0, cpItemLimit = 50;
+
+async function cpSearchItems(dir){
+  const btn=$("cpItBtn"), msg=$("cpItMsg"); hide(msg);
+  if (dir === -1) cpItemOffset = Math.max(0, cpItemOffset - cpItemLimit);
+  else if (dir === 1) cpItemOffset += cpItemLimit;
+  else cpItemOffset = 0;
+  busy(btn,true,"搜索中");
+  try{
+    const params = new URLSearchParams({
+      q: $("cpItQ").value.trim(), kind: $("cpItKind").value,
+      rarity: $("cpItRarity").value, limit: String(cpItemLimit), offset: String(cpItemOffset)
+    });
+    const d = await api("/api/items?" + params.toString());
+    const items = d.items || [];
+    $("cpItRows").innerHTML = items.length ? items.map(it =>
+      '<tr><td class="mono">'+it.item_id+'</td><td>'+esc(it.name)+'</td>'+
+      '<td class="muted">'+esc(it.kind)+(it.equipment_type?"/"+esc(it.equipment_type):"")+'</td>'+
+      '<td>'+(it.rarity||0)+'</td><td>'+(it.minimum_level||0)+'</td>'+
+      '<td><button class="small" onclick=\'addToCart('+JSON.stringify(it)+')\'>发放</button></td></tr>'
+    ).join("") : '<tr><td colspan="6" class="muted">没有找到物品</td></tr>';
+    $("cpItPage").textContent = "共 " + (d.total||0) + " 条，当前 " + (cpItemOffset+1) + " - " + (cpItemOffset+items.length);
+  }catch(e){ $("cpItRows").innerHTML='<tr><td colspan="6" class="muted">搜索失败</td></tr>'; show(msg,"❌ "+e.message,"err"); }
+  finally{ busy(btn,false); }
+}
+
+async function cpSendMail(){
+  const btn=$("cpSendBtn"), msg=$("cpSendMsg"); hide(msg);
+  if(!currentChar){ show(msg,"请先在左侧选择一个角色","err"); return; }
+  if(!cart.length && !(parseInt($("cpSendGold").value,10)||0)){
+    show(msg,"待发清单是空的（至少放一件物品，或填金币）","err"); return;
+  }
+  busy(btn,true,"发送中");
+  try{
+    const d = await api("/api/mail", {method:"POST", body: JSON.stringify({
+      character_id: currentChar.character_id,
+      title: $("cpSendTitle").value.trim() || "GM 发放",
+      body: $("cpSendBody").value.trim() || "请在邮箱中领取。",
+      gold: parseInt($("cpSendGold").value,10) || 0,
+      attachments: cart.map(c => ({
+        item_id: c.item_id, count: c.count, bind: c.bind,
+        reinforce_level: c.attr === "reinforce" ? c.reinforce : 0,
+        amplify_level: c.attr === "amplify" ? c.amplify_level : 0,
+        amplify_type: c.attr === "amplify" ? c.amplify_type : 0
+      }))
+    })});
+    let t = "✅ 已发送给【" + d.recipient_name + "】";
+    t += "\n在线刷新：" + (d.refreshed ? "已推送未读提示与邮箱刷新" : (d.online ? "在线但刷新失败" : "角色离线，下次打开邮箱可见"));
+    show(msg, t, "ok");
+    clearCart();
+  }catch(e){ show(msg,"❌ "+e.message,"err"); }
+  finally{ busy(btn,false); }
+}
+/* ================= 全服 / 批量 ================= */
+let allRows = [], selectedChars = new Set(), currentJob = null, jobTimer = null;
+
+async function loadAllCharacters(force){
+  const btn = $("acBtn"), msg = $("acMsg"); hide(msg); busy(btn, true, "扫描中");
+  $("acRows").innerHTML = '<tr><td colspan="9" class="muted">扫描中（账号多时约需数十秒）...</td></tr>';
+  try {
+    const d = await api("/api/all-characters" + (force ? "?refresh=1" : ""));
+    allRows = d.rows || [];
+    selectedChars.clear();
+    const t = new Date(d.scanned_at);
+    $("acInfo").textContent = "账号 " + d.accounts + " 个 · 角色 " + d.characters + " 个 · " +
+      (d.cached ? "缓存" : "已扫描") + " " + fmtTime(t);
+    renderAllCharacters();
+    if (!allRows.length) show(msg, "扫描到 0 个角色。若你确定玩家已建号，说明账号没写进 launcher_accounts（注册链路问题）。", "err");
+  } catch(e) { $("acRows").innerHTML = '<tr><td colspan="9" class="muted">扫描失败</td></tr>'; show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+
+function filteredRows(){
+  const kw = ($("acFilter").value || "").trim().toLowerCase();
+  if (!kw) return allRows;
+  return allRows.filter(r => (r.name||"").toLowerCase().includes(kw) || (r.username||"").toLowerCase().includes(kw));
+}
+
+function renderAllCharacters(){
+  const rows = filteredRows();
+  $("acCount").textContent = "显示 " + rows.length + " / 共 " + allRows.length + " 个角色，已选 " + selectedChars.size + " 个";
+  updateBatchPre();
+  if (!rows.length) { $("acRows").innerHTML = '<tr><td colspan="9" class="muted">没有匹配的角色</td></tr>'; return; }
+  $("acRows").innerHTML = rows.map((r,i) => {
+    const cid = String(r.character_id);
+    const checked = selectedChars.has(cid) ? "checked" : "";
+    return '<tr><td><input type="checkbox" style="width:auto" ' + checked + ' onchange="toggleChar(' + JSON.stringify(cid) + ',this.checked)"></td>' +
+      '<td class="muted">' + (i+1) + '</td>' +
+      '<td><b class="lk" onclick=\'openCharByName(' + JSON.stringify(String(r.username)) + ')\'>' + esc(r.name) + '</b></td>' +
+      '<td>' + esc(r.username) + '</td><td>' + r.level + '</td><td>' + r.cera + '</td><td>' + r.gold + '</td>' +
+      '<td>' + (r.online ? '<span class="tag on">在线</span>' : '<span class="tag">离线</span>') + '</td>' +
+      '<td><button class="ghost small" onclick=\'quickGive(' + JSON.stringify(String(r.character_id)) + ',' + JSON.stringify(String(r.name)) + ')\'>发放</button>' +
+      ' <button class="ghost small" onclick=\'gotoCharTab(' + JSON.stringify(String(r.username)) + ',"bag")\'>背包</button></td></tr>';
+  }).join("");
+}
+
+function toggleChar(id, on){ if (on) selectedChars.add(id); else selectedChars.delete(id); renderAllCharacters(); }
+function selectAllChars(on){
+  const rows = filteredRows();
+  if (on) rows.forEach(r => selectedChars.add(String(r.character_id)));
+  else selectedChars.clear();
+  renderAllCharacters();
+}
+function onBatchKind(){
+  const kind = $("btKind").value;
+  const isMail = kind === "mail";
+  const isBd = kind === "blackdiamond";
+  $("btMailWrap").classList.toggle("hide", !isMail);
+  $("btCurWrap").classList.toggle("hide", isMail || isBd);
+  $("btAmtWrap").classList.toggle("hide", isMail || isBd);
+  $("btModeWrap").classList.toggle("hide", isMail || isBd);
+  $("btBdWrap").classList.toggle("hide", !isBd);
+  updateBatchPre();
+}
+function updateBatchPre(){
+  const scope = $("btScope").value;
+  const accounts = new Set(); allRows.forEach(r => accounts.add(r.account_id));
+  let n;
+  if (scope === "selected") n = selectedChars.size;
+  else if (scope === "all") n = allRows.length;
+  else n = accounts.size;
+  if ($("btKind").value === "blackdiamond") {
+    n = accounts.size;
+    $("btPre").textContent = "本次目标：" + n + " 个账号（黑钻是账号级，每账号只发一次，不受勾选影响）";
+  } else {
+    $("btPre").textContent = "本次目标约 " + n + " 个角色";
+  }
+  const c = (typeof cart !== "undefined" && cart.length) ? cart.map(x => x.name + "×" + x.count).join("、") : "";
+  $("btCartInfo").textContent = c || "（空）";
+}
+
+async function startBatch(){
+  const btn = $("btBtn"), msg = $("btMsg"); hide(msg);
+  const kind = $("btKind").value;
+  const scope = $("btScope").value;
+  if (scope === "selected" && selectedChars.size === 0) { show(msg, "请先在下方勾选角色", "err"); return; }
+  if (!allRows.length) { show(msg, "请先点「扫描全服」", "err"); return; }
+
+  const payload = { scope: scope, character_ids: Array.from(selectedChars) };
+  let url = "/api/batch/cera";
+  if (kind === "blackdiamond") {
+    url = "/api/batch/black-diamond";
+    payload.days = parseInt($("btBdDays").value, 10) || 30;
+    if (payload.days < 1 || payload.days > 3650) { show(msg, "黑钻天数需在 1~3650 之间", "err"); return; }
+  } else if (kind === "mail") {
+    url = "/api/batch/mail";
+    payload.title = $("btTitle").value.trim() || "GM 发放";
+    payload.body = $("btBody").value.trim() || "请在邮箱中领取。";
+    payload.gold = parseInt($("btGold").value, 10) || 0;
+    payload.attachments = (typeof cart !== "undefined" ? cart : []).map(c => ({
+      item_id: c.item_id, count: c.count, bind: c.bind,
+      reinforce_level: c.attr === "reinforce" ? c.reinforce : 0,
+      amplify_level: c.attr === "amplify" ? c.amplify_level : 0,
+      amplify_type: c.attr === "amplify" ? c.amplify_type : 0
+    }));
+    if (!payload.attachments.length && !payload.gold) { show(msg, "物品邮件至少要有物品或金币", "err"); return; }
+  } else {
+    payload.currency = $("btCur").value;
+    payload.mode = $("btMode").value;
+    payload.amount = parseInt($("btAmount").value, 10) || 0;
+    if (payload.amount <= 0) { show(msg, "数量必须大于 0", "err"); return; }
+  }
+
+  const label = kind === "mail" ? "物品邮件"
+    : (kind === "blackdiamond" ? ("黑钻 " + (payload.days||30) + " 天") 
+    : ({"cera":"点券","token_cera":"代币券","happy_token_cera":"欢乐代币券","gold":"金币"}[payload.currency]));
+  if (!confirm($("btPre").textContent + "\n\n确定批量发放【" + label + "】？\n此操作不可撤销。")) return;
+
+  busy(btn, true, "提交中");
+  try {
+    const d = await api(url, {method:"POST", body: JSON.stringify(payload)});
+    currentJob = d.job_id;
+    $("btProgress").classList.remove("hide");
+    show(msg, "✅ 任务已启动，目标 " + d.total + " 个角色（任务号 " + d.job_id + "）", "ok");
+    pollJob();
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+
+function pollJob(){
+  if (jobTimer) clearInterval(jobTimer);
+  loadBatchJob();
+  jobTimer = setInterval(loadBatchJob, 1500);
+}
+
+async function loadBatchJob(){
+  if (!currentJob) return;
+  try {
+    const j = await api("/api/batch/" + encodeURIComponent(currentJob));
+    const pct = j.total ? Math.round(j.done * 100 / j.total) : 0;
+    $("btBar").style.width = pct + "%";
+    $("btStat").textContent = "进度 " + j.done + "/" + j.total + "（" + pct + "%）　成功 " + j.succeeded + "　失败 " + j.failed + (j.running ? "　运行中..." : "　已完成");
+    if (!j.running && jobTimer) { clearInterval(jobTimer); jobTimer = null; }
+  } catch(e) { if (jobTimer) { clearInterval(jobTimer); jobTimer = null; } }
+}
+
+async function showBatchFailures(){
+  if (!currentJob) return;
+  try {
+    const j = await api("/api/batch/" + encodeURIComponent(currentJob));
+    const fails = (j.results || []).filter(r => !r.ok);
+    if (!fails.length) { alert("没有失败记录 🎉"); return; }
+    alert("失败 " + fails.length + " 条（最多显示 60 条）：\n\n" + fails.slice(-60).map(r => r.account + " / " + r.target + "：" + r.message).join("\n"));
+  } catch(e) { alert("读取失败：" + e.message); }
+}
+
+// 点角色名/发放按钮 → 快速给单个角色发点券（沿用「点券发放」页的参数）
+function quickGive(characterID, name){
+  goTab("cera");
+  $("cName").value = name;
+  $("cAccount").value = "";
+  $("cMsg").classList.remove("hide");
+  $("cMsg").className = "msg info";
+  $("cMsg").textContent = "已选中角色：" + name + "（ID " + characterID + "）。填好币种与数量后点「立即发放」。";
+}
+
+/* ================= 团本翻牌奖励 / 概率（实时覆盖） ================= */
+let rrOverrides = {};   // 当前生效的覆盖表（键 -> 百分比）
+
+const RR_RAID_NAMES = { anton: "安徒恩", luke: "卢克", fiendwar: "超时空" };
+
+// 奖励池行：{raid, phaseIndex, kind, definitionItemID, weight, name, key}
+function rrRenderPoolRow(e, group){
+  const tb = $("rrRows");
+  const pct = (e.weight / (group.total_weight || 1)) * 100;
+  const cur = (rrOverrides[e.key] === undefined) ? 100 : rrOverrides[e.key];
+  const tr = document.createElement("tr");
+  tr.dataset.key = e.key;
+  tr.innerHTML =
+    '<td>' + esc(RR_RAID_NAMES[e.raid] || e.raid) + '</td>' +
+    '<td class="mono">' + (e.phase_index + 1) + '</td>' +
+    '<td class="mono">' + esc(e.kind) + '</td>' +
+    '<td class="mono">' + e.definition_item_id + '</td>' +
+    '<td>' + (e.name ? esc(e.name) : '<span class="muted">（无名称）</span>') + '</td>' +
+    '<td class="mono">' + e.weight + '</td>' +
+    '<td class="mono">' + pct.toFixed(1) + '%</td>' +
+    '<td><input class="rr-pct" type="number" min="0" max="1000000" value="' + cur + '" style="width:92px"></td>';
+  tb.appendChild(tr);
+}
+
+function rrAddManual(){
+  const tb = $("rrRows");
+  if (tb.querySelector(".muted")) tb.innerHTML = "";
+  const tr = document.createElement("tr");
+  tr.dataset.manual = "1";
+  tr.innerHTML =
+    '<td colspan="5"><input class="rr-key" placeholder="D|奖励盒ID|道具ID（盒内道具的权重，需手填）" value="" style="width:100%"></td>' +
+    '<td colspan="2" class="muted">手动</td>' +
+    '<td><input class="rr-pct" type="number" min="0" max="1000000" value="100" style="width:92px"></td>';
+  tb.appendChild(tr);
+}
+
+async function loadRaidRewardPools(){
+  const btn = $("rrBtn"), msg = $("rrMsg"); hide(msg); busy(btn, true, "读取中");
+  $("rrRows").innerHTML = '<tr><td colspan="8" class="muted">读取中...</td></tr>';
+  try {
+    const d = await api("/api/raid-reward-pools");
+    rrOverrides = (d.overrides && d.overrides.weights) || {};
+    const groups = d.groups || [];
+    if (d.unsupported) {
+      $("rrRows").innerHTML = '<tr><td colspan="8" class="muted">当前服务端未启用奖励池接口</td></tr>';
+      $("rrInfo").textContent = "功能不可用";
+      $("rrSaveBtn").disabled = true;
+      if (d.notes && d.notes.length) show(msg, "ℹ " + d.notes.join("\n"), "info");
+      return;
+    }
+    $("rrRows").innerHTML = "";
+    if (!groups.length) {
+      $("rrRows").innerHTML = '<tr><td colspan="8" class="muted">没有读到奖励池</td></tr>';
+    } else {
+      groups.forEach(g => (g.entries || []).forEach(e => rrRenderPoolRow(e, g)));
+    }
+    // 已有的覆盖里如果有池表里没有的键（例如手填的 D| 键），补一行出来，避免被静默丢掉
+    const shown = {};
+    $("rrRows").querySelectorAll("tr[data-key]").forEach(tr => { shown[tr.dataset.key] = 1; });
+    Object.keys(rrOverrides).forEach(k => {
+      if (shown[k]) return;
+      rrAddManual();
+      const tr = $("rrRows").lastElementChild;
+      tr.querySelector(".rr-key").value = k;
+      tr.querySelector(".rr-pct").value = rrOverrides[k];
+    });
+    $("rrInfo").textContent = "共 " + groups.length + " 个池子、"
+      + $("rrRows").querySelectorAll("tr[data-key]").length + " 条条目；当前覆盖 "
+      + Object.keys(rrOverrides).length + " 条";
+    if (d.notes && d.notes.length) show(msg, "ℹ " + d.notes.join("\n"), "info");
+  } catch(e) {
+    $("rrRows").innerHTML = '<tr><td colspan="8" class="muted">读取失败</td></tr>';
+    show(msg, "❌ " + e.message, "err");
+  } finally { busy(btn, false); }
+}
+
+function rrCollectWeights(){
+  const weights = {};
+  let bad = "";
+  $("rrRows").querySelectorAll("tr").forEach(tr => {
+    const pctInput = tr.querySelector(".rr-pct");
+    if (!pctInput) return;
+    const pct = parseInt(pctInput.value, 10);
+    if (isNaN(pct) || pct < 0 || pct > 1000000) { bad = tr.dataset.key || "(手填行)"; return; }
+    let key = tr.dataset.key;
+    if (tr.dataset.manual) {
+      const k = tr.querySelector(".rr-key");
+      key = k ? k.value.trim() : "";
+      if (!key) return;                       // 空的手填行忽略
+      if (!/^[PD]\|/.test(key)) { bad = key; return; }
+    }
+    if (!key) return;
+    if (pct !== 100) weights[key] = pct;      // 只有改过的才写进覆盖表
+  });
+  return { weights: weights, bad: bad };
+}
+
+async function saveRaidRewardPools(){
+  const btn = $("rrSaveBtn"), msg = $("rrMsg"); hide(msg);
+  const c = rrCollectWeights();
+  if (c.bad) {
+    show(msg, "❌ 数值不合法：" + c.bad + "\n倍率范围 0 ~ 1000000", "err"); return;
+  }
+  const n = Object.keys(c.weights).length;
+  if (!confirm("保存后生效 " + n + " 条改动（其余条目回 PVF 原值）。\n\n⚠ 这是整体替换：表里没列出、也没手填的键会被清掉。\n确定继续？")) return;
+  busy(btn, true, "保存中");
+  try {
+    await api("/api/raid-reward-rate", {method:"POST",
+      body: JSON.stringify({weights: c.weights, items: {}})});
+    rrOverrides = c.weights;
+    show(msg, "✅ 已生效 " + n + " 条，立即作用于下一场团本翻牌结算。", "ok");
+    loadRaidRewardPools();
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+
+async function rrClearAll(){
+  const msg = $("rrMsg"); hide(msg);
+  if (!confirm("把全部条目恢复成 PVF 原值？")) return;
+  try {
+    await api("/api/raid-reward-rate", {method:"POST", body: JSON.stringify({weights:{}, items:{}})});
+    rrOverrides = {};
+    show(msg, "✅ 已全部恢复原值。", "ok");
+    loadRaidRewardPools();
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+}
+
+/* ================= 频道热重载 ================= */
+async function reloadChannels(){
+  const btn = $("chReloadBtn"), msg = $("ovMsg"); hide(msg); busy(btn, true, "重载中");
+  try {
+    await api("/api/channels/reload", {method:"POST", body:"{}"});
+    show(msg, "✅ 频道配置已热重载", "ok");
+    refreshStatus();
+  } catch(e) { show(msg, "❌ " + e.message, "err"); }
+  finally { busy(btn, false); }
+}
+
+/* ================= 角色：金币 / 疲劳 / 转职 / 附加点 / 票据 ================= */
+function needChar(){ if(!currentChar){ alert("请先在「角色管理」页查询并选择一个角色"); goTab("character"); return false; } return true; }
+
+async function doSetGold(){
+  if(!needChar()) return;
+  const btn=$("goldBtn"), msg=$("goldMsg"); hide(msg); busy(btn,true,"设置中");
+  try {
+    const d = await api("/api/character/gold", {method:"POST", body: JSON.stringify({
+      character_id: currentChar.character_id, value: parseInt($("goldVal").value,10)||0 })});
+    show(msg, "✅ 金币已设置\n" + JSON.stringify(d,null,1).slice(0,300), "ok");
+  } catch(e){ show(msg,"❌ "+e.message,"err"); } finally { busy(btn,false); }
+}
+
+async function doFatigue(mode){
+  if(!needChar()) return;
+  const btn=$("fatBtn"), msg=$("fatMsg"); hide(msg); busy(btn,true,"处理中");
+  try {
+    const body = {character_id: currentChar.character_id, mode: mode};
+    if (mode === "set") body.value = parseInt($("fatVal").value,10)||0;
+    const d = await api("/api/character/fatigue", {method:"POST", body: JSON.stringify(body)});
+    show(msg, "✅ 疲劳 " + d.fatigue_before + " → " + d.fatigue_after + "（上限 " + d.fatigue_limit + "）"
+      + "\n" + (d.refreshed ? "在线客户端已收到刷新" : (d.online ? "角色在线，但推送未成功（落库已成功）" : "角色离线，下次登录生效")), "ok");
+  } catch(e){ show(msg,"❌ "+e.message,"err"); } finally { busy(btn,false); }
+}
+
+/* ---- 职业树（大系 → 转职 → 觉醒 三级级联） ---- */
+let classTreeData = null;
+
+async function loadClassTree(){
+  if (classTreeData) return classTreeData;
+  const d = await api("/api/class-tree");
+  classTreeData = d || [];
+  const sel = $("crJobSel");
+  sel.innerHTML = classTreeData.map((c,i) => '<option value="'+i+'">'+esc(c.name)+'</option>').join("");
+  syncGrowOptions();
+  return classTreeData;
+}
+
+function classOfJobIndex(idx){
+  if (!classTreeData || !classTreeData[idx]) return null;
+  return classTreeData[idx];
+}
+
+// 依当前选中的大系刷新「转职」下拉
+function syncGrowOptions(){
+  const cls = classOfJobIndex($("crJobSel").value);
+  const gsel = $("crGrowSel");
+  if (!cls){ gsel.innerHTML = ""; $("crAwaSel").innerHTML = ""; return; }
+  gsel.innerHTML = cls.grows.map(g => '<option value="' + g.first_grow + '">' + esc(g.name) + '</option>').join("");
+  syncAwakeOptions();
+}
+
+// 依当前选中的转职分支刷新「觉醒」下拉（未觉醒 + 该分支的觉醒名）
+function syncAwakeOptions(){
+  const cls = classOfJobIndex($("crJobSel").value);
+  const asel = $("crAwaSel");
+  if (!cls){ asel.innerHTML = ""; return; }
+  const growVal = parseInt($("crGrowSel").value, 10) || 0;
+  const grow = (cls.grows || []).find(g => g.first_grow === growVal);
+  const opts = ['<option value="0">未觉醒</option>'];
+  if (grow && grow.awakes && grow.awakes.length){
+    grow.awakes.forEach((n,i) => { opts.push('<option value="' + (i+1) + '">' + esc(n) + '</option>'); });
+  }
+  asel.innerHTML = opts.join("");
+}
+
+// 把角色的当前 职业/转职/觉醒 回填到三个下拉，并显示中文名
+async function loadCharacterJob(){
+  if (!currentChar) return;
+  const cur = $("crCurrent");
+  cur.textContent = "读取中...";
+  try {
+    const d = await api("/api/character/job?id=" + encodeURIComponent(currentChar.character_id));
+    await loadClassTree();
+    const clsIdx = (classTreeData || []).findIndex(c => c.job_id === d.job);
+    if (clsIdx >= 0){
+      $("crJobSel").value = String(clsIdx);
+      syncGrowOptions();
+      $("crGrowSel").value = String(d.first_grow);
+      syncAwakeOptions();
+      $("crAwaSel").value = String(d.second_grow);
+    }
+    cur.textContent = d.display || (d.job_name + " / " + d.grow_name);
+  } catch(e){
+    cur.textContent = "读取失败：" + e.message;
+  }
+}
+
+async function doSetCareer(){
+  if(!needChar()) return;
+  const btn=$("crBtn"), msg=$("crMsg"); hide(msg);
+  const cls = classOfJobIndex($("crJobSel").value);
+  if (!cls){ show(msg, "职业树还没加载好，请稍后再试", "err"); return; }
+  const job = cls.job_id;
+  const first = parseInt($("crGrowSel").value, 10) || 0;
+  const awakening = parseInt($("crAwaSel").value, 10) || 0;
+  const growName = (cls.grows.find(g => g.first_grow === first) || {}).name || String(first);
+  const awakeName = awakening > 0 ? ($("crAwaSel").selectedOptions[0] ? $("crAwaSel").selectedOptions[0].textContent : String(awakening)) : "未觉醒";
+  if (!confirm("把角色【" + currentChar.name + "】覆写为：\n\n" + cls.name + " / " + growName + " / " + awakeName + "\n\n服务端会按同一套算法重算战斗属性。确定？")) return;
+  busy(btn,true,"提交中");
+  try {
+    const d = await api("/api/character/career", {method:"POST", body: JSON.stringify({
+      character_id: currentChar.character_id, job: job, first: first, awakening: awakening })});
+    show(msg, "✅ 已覆写为：" + cls.name + " / " + growName + " / " + awakeName + "\n" + JSON.stringify(d,null,1).slice(0,300), "ok");
+    loadCharacterJob();
+  } catch(e){ show(msg,"❌ "+e.message,"err"); } finally { busy(btn,false); }
+}
+
+async function doSetSkillBonus(){
+  if(!needChar()) return;
+  const btn=$("bonusBtn"), msg=$("bonusMsg"); hide(msg); busy(btn,true,"设置中");
+  try {
+    const d = await api("/api/character/skill-bonus", {method:"POST", body: JSON.stringify({
+      character_id: currentChar.character_id,
+      bonus_sp: parseInt($("bonusSp").value,10)||0,
+      bonus_tp: parseInt($("bonusTp").value,10)||0 })});
+    show(msg, "✅ 附加已设置\n" + JSON.stringify(d,null,1).slice(0,300), "ok");
+  } catch(e){ show(msg,"❌ "+e.message,"err"); } finally { busy(btn,false); }
+}
+
+async function doRepairHappy(){
+  if(!needChar()) return;
+  const btn=$("rhBtn"), msg=$("rhMsg"); hide(msg); busy(btn,true,"补发中");
+  try {
+    const d = await api("/api/character/wallet/repair-happy", {method:"POST", body: JSON.stringify({
+      character_id: currentChar.character_id })});
+    show(msg, "✅ 补发完成\n" + JSON.stringify(d,null,1).slice(0,400), "ok");
+  } catch(e){ show(msg,"❌ "+e.message,"err"); } finally { busy(btn,false); }
+}
+
+async function doQueryEquipSlots(){
+  if(!needChar()) return;
+  const msg=$("eqMsg"); hide(msg);
+  try {
+    const d = await api("/api/character/equipment-slots?id=" + encodeURIComponent(currentChar.character_id));
+    show(msg, "装备栏状态：\n" + JSON.stringify(d,null,1).slice(0,500), "info");
+  } catch(e){ show(msg,"❌ "+e.message,"err"); }
+}
+
+async function doDungeonUnlock(what){
+  if(!needChar()) return;
+  const btn=$("dgdBtn"), msg=$("dgdMsg"); hide(msg);
+  if(!confirm("确定为角色【"+currentChar.name+"】执行该副本解锁？")) return;
+  busy(btn,true,"提交中");
+  try {
+    const d = await api("/api/character/dungeons/unlock-" + what, {method:"POST", body: JSON.stringify({
+      character_id: currentChar.character_id })});
+    show(msg, "✅ 已提交\n" + JSON.stringify(d,null,1).slice(0,400), "ok");
+  } catch(e){ show(msg,"❌ "+e.message,"err"); } finally { busy(btn,false); }
+}
+
+async function doDungeonAccess(){
+  if(!needChar()) return;
+  const msg=$("dgdMsg"); hide(msg);
+  try {
+    const d = await api("/api/character/dungeons?id=" + encodeURIComponent(currentChar.character_id));
+    show(msg, "副本统计：\n" + JSON.stringify(d,null,1).slice(0,500), "info");
+  } catch(e){ show(msg,"❌ "+e.message,"err"); }
+}
+
+async function doDeleteCharacter(){
+  if(!needChar()) return;
+  const btn=$("delBtn"), msg=$("delMsg"); hide(msg);
+  const name = $("delConfirm").value.trim();
+  if(name !== currentChar.name){
+    show(msg, "❌ 角色名不一致。请完整输入：" + currentChar.name, "err"); return;
+  }
+  if(!confirm("最后确认：删除角色【" + currentChar.name + "】？\n\n· 这是软删除，与玩家自己删角色同一条路径\n· 会清理其它角色好友列表里的相关条目\n· 不可撤销")) return;
+  busy(btn,true,"删除中");
+  try {
+    const d = await api("/api/character/delete", {method:"POST", body: JSON.stringify({
+      character_id: currentChar.character_id, confirm_name: name })});
+    const fc = d.friends_cleaned;
+    let t = "✅ 角色已删除：" + d.name + "（槽位 " + d.slot + "）";
+    t += "\n好友清理：" + (fc === -1 ? "未知（好友仓储不可用或清理失败，角色本身已删除）" : (fc + " 条"));
+    show(msg, t, "ok");
+    currentChar = null;
+    $("chPanel").classList.add("hide");
+  } catch(e){ show(msg,"❌ "+e.message,"err"); }
+  finally { busy(btn,false); }
+}
+
+/* ================= 任务（角色面板内） ================= */
+// 服务端任务列表接口返回的是 {character, active[], completed[]}，不是扁平数组；
+// "可接取但未接"的任务要靠 search 接口另查。
+let qActive = [], qCompleted = [], qSearch = [];
+let questCat = "all", questSelected = new Set();
+
+function tagQuests(list, state){ (list||[]).forEach(q => q._state = state); return list || []; }
+
+// grade 里放的是任务的归属标签（sub/epic/achievement/daily/…），用它做分类。
+function questGrade(q){ return String((q && q.grade) || "").toLowerCase(); }
+function isDailyQuest(q){ return questGrade(q).includes("daily"); }
+function isAchievementQuest(q){ return questGrade(q).includes("achievement"); }
+
+function currentQuestList(){
+  switch(questCat){
+    case "active": return qActive;
+    case "completed": return qCompleted;
+    case "daily": return qActive.concat(qCompleted).filter(isDailyQuest);
+    case "achievement": return qActive.concat(qCompleted).filter(isAchievementQuest);
+    case "main": return qActive.concat(qCompleted).filter(q => !isDailyQuest(q) && !isAchievementQuest(q));
+    case "search": return qSearch;
+    default: return qActive.concat(qCompleted);
+  }
+}
+
+async function cpLoadQuests(){
+  const btn=$("cpQBtn"), msg=$("qMsg"); hide(msg); busy(btn,true,"载入中");
+  $("qRows").innerHTML = '<tr><td colspan="8" class="muted">读取中...</td></tr>';
+  if(!currentChar){ show(msg,"请先在左侧选择一个角色","err"); $("qRows").innerHTML='<tr><td colspan="8" class="muted">未选角色</td></tr>'; return; }
+  try{
+    const d = await api("/api/character/quests?id=" + encodeURIComponent(currentChar.character_id));
+    qActive = tagQuests(d.active, "active");
+    qCompleted = tagQuests(d.completed, "completed");
+    qSearch = [];
+    questSelected.clear();
+    const c = d.character || {};
+    $("qWho").textContent = (c.name ? "角色：" + c.name + " · " : "") + "进行中 " + qActive.length + " · 已完成 " + qCompleted.length;
+    setQuestCat("all", document.querySelector('.catbtns button[data-cat="all"]'));
+    if(!qActive.length && !qCompleted.length) show(msg, "该角色没有进行中或已完成的任务。可点「搜索更多任务」按名字找。", "info");
+  }catch(e){ $("qRows").innerHTML='<tr><td colspan="8" class="muted">读取失败</td></tr>'; show(msg,"❌ "+e.message,"err"); }
+  finally{ busy(btn,false); }
+}
+
+async function searchQuests(){
+  const msg=$("qMsg"); hide(msg);
+  if(!currentChar){ show(msg,"请先在左侧选择一个角色","err"); return; }
+  const kw = $("cpQFilter").value.trim();
+  if(!kw){ show(msg,"请先在过滤框里填任务名或 ID 再搜索","err"); return; }
+  const btn=$("qSearchBtn"); busy(btn,true,"搜索中");
+  try{
+    const d = await api("/api/character/quests?id=" + encodeURIComponent(currentChar.character_id) +
+      "&kw=" + encodeURIComponent(kw) + "&limit=200");
+    qSearch = tagQuests(d.search, "search");
+    setQuestCat("search", document.querySelector('.catbtns button[data-cat="search"]'));
+    show(msg, "搜索到 " + qSearch.length + " 条任务（含未接取的）", "ok");
+  }catch(e){ show(msg,"❌ "+e.message,"err"); }
+  finally{ busy(btn,false); }
+}
+
+function setQuestCat(cat, btn){
+  questCat = cat;
+  document.querySelectorAll(".catbtns button").forEach(b => b.classList.toggle("active", b === btn));
+  renderQuests();
+}
+
+function filteredQuests(){
+  const list = currentQuestList();
+  const kw = ($("cpQFilter").value||"").trim().toLowerCase();
+  if(!kw) return list;
+  return list.filter(q => String(q.quest_id).includes(kw) || (q.name||"").toLowerCase().includes(kw));
+}
+
+function renderQuests(){
+  const rows = filteredQuests();
+  const total = currentQuestList().length;
+  $("qCount").textContent = "显示 " + rows.length + " / 共 " + total + "，已选 " + questSelected.size;
+  if(!rows.length){ $("qRows").innerHTML = '<tr><td colspan="8" class="muted">没有匹配的任务</td></tr>'; return; }
+  $("qRows").innerHTML = rows.map(q => {
+    const st = q._state === "completed" ? '<span class="tag on">已完成</span>'
+      : (q._state === "active" ? '<span class="tag warn">进行中</span>'
+      : (q.acceptable ? '<span class="tag">可接取</span>' : '<span class="tag">未接取</span>'));
+    const cat = isDailyQuest(q) ? '<span class="tag">每日</span>'
+      : (isAchievementQuest(q) ? '<span class="tag">成就</span>' : esc(q.grade || ""));
+    return '<tr><td><input type="checkbox" style="width:auto" ' + (questSelected.has(String(q.quest_id))?"checked":"") +
+      ' onchange="toggleQuest(' + q.quest_id + ',this.checked)"></td>' +
+      '<td class="mono">' + q.quest_id + '</td><td>' + esc(q.name) + '</td>' +
+      '<td class="muted">' + cat + '</td><td>' + (q.level_min||0) + '</td><td>' + st + '</td>' +
+      '<td class="muted mono">' + (q.main_quest_id||"") + '</td>' +
+      '<td>' +
+      '<button class="ghost small" onclick="questAct(' + q.quest_id + ',\'accept\')">接取</button> ' +
+      '<button class="ghost small" onclick="questAct(' + q.quest_id + ',\'ready\')">可提交</button> ' +
+      '<button class="ghost small" onclick="questAct(' + q.quest_id + ',\'complete\')">完成</button> ' +
+      '<button class="ghost small" onclick="questAct(' + q.quest_id + ',\'uncomplete\')">撤销</button> ' +
+      '<button class="ghost small" onclick="questAct(' + q.quest_id + ',\'give-up\')">放弃</button>' +
+      '</td></tr>';
+  }).join("");
+}
+
+function toggleQuest(id,on){ if(on) questSelected.add(String(id)); else questSelected.delete(String(id)); renderQuests(); }
+function selectAllQuests(on){
+  if(on) filteredQuests().forEach(q => questSelected.add(String(q.quest_id)));
+  else questSelected.clear();
+  renderQuests();
+}
+
+async function questAct(questID, action){
+  if(!currentChar){ alert("请先在左侧选择一个角色"); return; }
+  const label = {accept:"接取",ready:"置为可提交","give-up":"放弃",complete:"完成",uncomplete:"撤销完成"}[action] || action;
+  if(action === "complete" && !confirm("「完成」只改状态、**不发奖励**，并且会作废该任务待领的奖励。\n确定继续？")) return;
+  if(action === "uncomplete" && !confirm("撤销完成可能影响后续任务链，确定？")) return;
+  const msg=$("qMsg"); hide(msg);
+  try{
+    await api("/api/character/quest/action", {method:"POST", body: JSON.stringify({
+      character_id: currentChar.character_id, quest_id: questID, action: action })});
+    show(msg, "✅ 任务 " + questID + " 已" + label, "ok");
+    cpLoadQuests();
+  }catch(e){ show(msg,"❌ "+e.message,"err"); }
+}
+
+async function completeSelectedQuests(){
+  if(!currentChar){ alert("请先在左侧选择一个角色"); return; }
+  const ids = Array.from(questSelected).map(Number).sort((a,b)=>a-b);
+  if(!ids.length){ alert("请先勾选任务"); return; }
+  if(!confirm("批量完成 " + ids.length + " 条任务？\n\n⚠ 服务端不发奖励，并会作废这些任务待领的奖励。\n要求角色离线。")) return;
+  await batchComplete(ids);
+}
+
+async function completeMainChains(){
+  if(!currentChar){ alert("请先在左侧选择一个角色"); return; }
+  const groups = {};
+  qActive.concat(qCompleted).forEach(q => { if(q.main_quest_id) (groups[q.main_quest_id] = groups[q.main_quest_id] || []).push(q.quest_id); });
+  const ids = [];
+  Object.keys(groups).forEach(k => groups[k].sort((a,b)=>a-b).forEach(id => ids.push(id)));
+  if(!ids.length){ alert("没有找到带主线归属的任务（main_quest_id 为空）"); return; }
+  if(!confirm("完成全部主线链，共 " + ids.length + " 条（分 " + Object.keys(groups).length + " 条链）？\n\n⚠ 不发奖励。要求角色离线。")) return;
+  await batchComplete(ids);
+}
+
+async function batchComplete(ids){
+  const msg=$("qMsg"); hide(msg);
+  const chunks = [];
+  for(let i=0;i<ids.length;i+=200) chunks.push(ids.slice(i,i+200));
+  let ok=0, fail=0, lastErr="";
+  for(const c of chunks){
+    try{
+      await api("/api/character/quests/complete-batch", {method:"POST", body: JSON.stringify({
+        character_id: currentChar.character_id, quest_ids: c })});
+      ok += c.length;
+    }catch(e){ fail += c.length; lastErr = e.message; break; }
+  }
+  if(fail) show(msg, "部分成功：" + ok + " 条，失败 " + fail + " 条\n" + lastErr, "err");
+  else show(msg, "✅ 已批量完成 " + ok + " 条任务（未发奖励）", "ok");
+  cpLoadQuests();
+}
+/* ================= 单件高级发放 ================= */
+function fillRichItem(itemID){ $("rmItem").value = itemID; $("rmItem").scrollIntoView({behavior:"smooth",block:"center"}); }
+
+async function sendRichMail(){
+  const btn=$("rmBtn"), msg=$("rmMsg"); hide(msg);
+  const who = $("rmChar").value.trim();
+  if(!who){ show(msg,"请填写收件角色","err"); return; }
+  const itemID = parseInt($("rmItem").value,10)||0;
+  if(!itemID){ show(msg,"请填写物品 ID","err"); return; }
+  const emblem = $("rmEmblem").value.split(/[,，\s]+/).map(s=>parseInt(s,10)).filter(n=>n>0);
+  const reinforce = parseInt($("rmReinforce").value,10)||0;
+  const ampType = parseInt($("rmAmpType").value,10)||0;
+  if(reinforce>0 && ampType>0 && !confirm("同时设置了强化和增幅。\n单件接口服务端不拦，但游戏内通常互斥，确定继续？")) return;
+  busy(btn,true,"发送中");
+  try {
+    const d = await api("/api/mail/rich", {method:"POST", body: JSON.stringify({
+      character: who,
+      item_id: itemID,
+      count: parseInt($("rmCount").value,10)||1,
+      expire_days: parseInt($("rmExpire").value,10)||0,
+      reinforce: reinforce,
+      amplify_type: ampType,
+      forging: parseInt($("rmForging").value,10)||0,
+      equipment_quality: $("rmQuality").value,
+      emblem_item_ids: emblem,
+      enchant_bead_item_id: parseInt($("rmEnchant").value,10)||0,
+      title: $("rmTitle").value.trim() || "GM 发放",
+      body: $("rmBody").value.trim() || "请在邮箱中领取物品。"
+    })});
+    show(msg, "✅ 已发送\n" + JSON.stringify(d,null,1).slice(0,400), "ok");
+  } catch(e){ show(msg,"❌ "+e.message,"err"); }
+  finally { busy(btn,false); }
+}
+
+/* ================= 启动 ================= */
+(async function(){
+  try { await api("/api/status"); showApp(); await refreshStatus(); ensureRecordKinds();
+    loadClassTree().catch(() => {}); }   // 预加载职业树，选角色时就能立刻回填
+  catch(e) { showLogin(); }
+})();
+setInterval(function(){ if (!$("app").classList.contains("hide")) refreshStatus(); }, 30000);
+</script>
+</body>
+</html>

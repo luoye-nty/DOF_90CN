@@ -1,0 +1,454 @@
+<UserControl x:Class="DNFLogin.Gm.S4GmPageControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#FF181820">
+    <UserControl.Resources>
+        <Style x:Key="S4GmBtn" TargetType="Button">
+            <Setter Property="Background" Value="#FFE84A3A" />
+            <Setter Property="Foreground" Value="#FFFFFFFF" />
+            <Setter Property="BorderBrush" Value="#FFE84A3A" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="14,5" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.55" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.75" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="S4GmBox" TargetType="TextBox">
+            <Setter Property="Foreground" Value="#FFE8E8EE" />
+            <Setter Property="Background" Value="#FF191A1F" />
+            <Setter Property="BorderBrush" Value="#FF2A2B31" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="CaretBrush" Value="White" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#FFFF6A5A" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="S4GmLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#E6FFFFFF" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+        <Style x:Key="S4GmGrid" TargetType="DataGrid">
+            <Setter Property="Background" Value="#FF191A1F" />
+            <Setter Property="Foreground" Value="#FFE8E8EE" />
+            <Setter Property="BorderBrush" Value="#FF2A2B31" />
+            <Setter Property="RowBackground" Value="#FF14141B" />
+            <Setter Property="AlternatingRowBackground" Value="#FF1D1E24" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HorizontalGridLinesBrush" Value="#FF2A2B31" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="AutoGenerateColumns" Value="True" />
+            <Setter Property="CanUserAddRows" Value="False" />
+            <Setter Property="CanUserDeleteRows" Value="False" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="RowHeight" Value="30" />
+            <Setter Property="SelectionMode" Value="Single" />
+            <Setter Property="SelectionUnit" Value="FullRow" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="ColumnHeaderHeight" Value="32" />
+        </Style>
+        <Style x:Key="S4GmRow" TargetType="DataGridRow">
+            <Setter Property="Background" Value="Transparent" />
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#26E84A3A" />
+                    <Setter Property="Foreground" Value="#FFFFFFFF" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="S4GmCombo" TargetType="ComboBox">
+            <Setter Property="Foreground" Value="#FFE8E8EE" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="Toggle"
+                                          Focusable="False"
+                                          ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="Bd"
+                                                Background="#FF191A1F"
+                                                BorderBrush="#FF2A2B31"
+                                                BorderThickness="1"
+                                                CornerRadius="8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="22" />
+                                                </Grid.ColumnDefinitions>
+                                                <Path Grid.Column="1"
+                                                      Data="M 0 0 L 4 4 L 8 0"
+                                                      Stroke="#99FFFFFF"
+                                                      StrokeThickness="1.5"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bd" Property="BorderBrush" Value="#FFFF6A5A" />
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Bd" Property="BorderBrush" Value="#FFE84A3A" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter x:Name="ContentSite"
+                                              Margin="10,0,28,0"
+                                              HorizontalAlignment="Left"
+                                              VerticalAlignment="Center"
+                                              IsHitTestVisible="False"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" />
+                            <Popup x:Name="PART_Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Slide">
+                                <Border Background="#FF191A1F"
+                                        BorderBrush="#FF2A2B31"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        MinWidth="{TemplateBinding ActualWidth}"
+                                        Margin="0,4,0,0">
+                                    <ScrollViewer MaxHeight="220">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ComboBoxItem">
+                        <Setter Property="Foreground" Value="#FFE8E8EE" />
+                        <Setter Property="Padding" Value="10,6" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ComboBoxItem">
+                                    <Border x:Name="Bd"
+                                            Background="Transparent"
+                                            CornerRadius="4"
+                                            Margin="2"
+                                            Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsHighlighted" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="#12E84A3A" />
+                                            <Setter Property="Foreground" Value="#FFFFFFFF" />
+                                        </Trigger>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter Property="Foreground" Value="#FFFF7A6A" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="TabItemDark" TargetType="TabItem">
+            <Setter Property="Foreground" Value="#E6FFFFFF" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="bd" Background="Transparent" BorderThickness="0,0,0,2"
+                                BorderBrush="Transparent" Padding="14,8">
+                            <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#FFE84A3A" />
+                                <Setter Property="Foreground" Value="#FFFFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#FF1D1E24" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 顶部状态栏 -->
+        <Border Grid.Row="0" Background="#FF14141B" BorderBrush="#FF2A2A34"
+                BorderThickness="0,0,0,1" Padding="16,10">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="GM 工具" Foreground="White"
+                               FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <TextBlock x:Name="StatusText" Text="未初始化" Foreground="#FFFFB74D"
+                               Margin="16,0,0,0" VerticalAlignment="Center" FontSize="13" />
+                    <Button x:Name="ReloadButton" Content="重新加载环境" Width="118"
+                            Style="{StaticResource S4GmBtn}" Click="ReloadButton_Click" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <TextBlock x:Name="DbPathText" Text="数据库: -" Foreground="#FF9A9AAB"
+                               FontSize="11" Margin="0,0,24,0" />
+                    <TextBlock x:Name="PvfPathText" Text="PVF: -" Foreground="#FF9A9AAB" FontSize="11" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- 功能页签 -->
+        <TabControl Grid.Row="1" Background="#FF181820" BorderThickness="0" Padding="8">
+            <TabControl.Resources>
+                <Style TargetType="TabPanel">
+                    <Setter Property="Background" Value="#FF14141B" />
+                </Style>
+            </TabControl.Resources>
+            <TabItem Header="账号管理" Style="{StaticResource TabItemDark}">
+                <Grid Margin="4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <DataGrid x:Name="AccountGrid" Style="{StaticResource S4GmGrid}" RowStyle="{StaticResource S4GmRow}"
+                              AutoGeneratingColumn="AccountGrid_AutoGeneratingColumn"
+                              SelectionChanged="AccountGrid_SelectionChanged" />
+                    <WrapPanel Grid.Row="1" Margin="0,6,0,0">
+                        <Button Content="刷新账号" Style="{StaticResource S4GmBtn}" Click="RefreshAccounts_Click" />
+                        <TextBlock Text="账号ID:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="AccountIdBox" Width="70" Style="{StaticResource S4GmBox}" />
+                        <TextBlock Text="CERA:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="AccountCeraBox" Width="80" Style="{StaticResource S4GmBox}" />
+                        <Button Content="设置CERA" Style="{StaticResource S4GmBtn}" Click="SetAccountCera_Click" />
+                        <TextBlock Text="TokenCERA:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="AccountTokenBox" Width="80" Style="{StaticResource S4GmBox}" />
+                        <Button Content="设置Token" Style="{StaticResource S4GmBtn}" Click="SetAccountToken_Click" />
+                        <TextBlock Text="幸运星:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="AccountLuckyBox" Width="80" Style="{StaticResource S4GmBox}" />
+                        <Button Content="设置幸运星" Style="{StaticResource S4GmBtn}" Click="SetAccountLucky_Click" />
+                        <TextBlock Text="荣誉等级:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="AccountHonorBox" Width="50" Style="{StaticResource S4GmBox}" />
+                        <Button Content="设置荣誉" Style="{StaticResource S4GmBtn}" Click="SetAccountHonor_Click" />
+                        <Button Content="成长胶囊拉满" Style="{StaticResource S4GmBtn}" Click="MaxAccountCapsule_Click" />
+                        <Button Content="清空仓库" Style="{StaticResource S4GmBtn}" Click="ClearAccountCargo_Click" />
+                        <TextBlock Text="晶块ItemID:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="CubeItemIdBox" Width="60" Style="{StaticResource S4GmBox}" />
+                        <TextBlock Text="数量:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="CubeAmountBox" Width="60" Style="{StaticResource S4GmBox}" />
+                        <Button Content="调整晶块" Style="{StaticResource S4GmBtn}" Click="AdjustCube_Click" />
+                        <TextBlock Text="灵魂ItemID:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="SoulItemIdBox" Width="60" Style="{StaticResource S4GmBox}" />
+                        <TextBlock Text="数量:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="SoulAmountBox" Width="60" Style="{StaticResource S4GmBox}" />
+                        <Button Content="调整灵魂" Style="{StaticResource S4GmBtn}" Click="AdjustSoul_Click" />
+                    </WrapPanel>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="角色管理" Style="{StaticResource TabItemDark}">
+                <Grid Margin="4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <DataGrid x:Name="CharacterGrid" Style="{StaticResource S4GmGrid}"
+                              AutoGeneratingColumn="CharacterGrid_AutoGeneratingColumn"
+                              SelectionChanged="CharacterGrid_SelectionChanged" />
+                    <WrapPanel Grid.Row="1" Margin="0,6,0,0">
+                        <Button Content="刷新角色" Style="{StaticResource S4GmBtn}" Click="RefreshCharacters_Click" />
+                        <TextBlock Text="等级:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="CharLevelBox" Width="50" Style="{StaticResource S4GmBox}" />
+                        <Button Content="设置等级" Style="{StaticResource S4GmBtn}" Click="SetCharLevel_Click" />
+                        <TextBlock Text="金币:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="CharGoldBox" Width="70" Style="{StaticResource S4GmBox}" />
+                        <Button Content="设置金币" Style="{StaticResource S4GmBtn}" Click="SetCharGold_Click" />
+                        <TextBlock Text="CERA:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="CharCeraBox" Width="70" Style="{StaticResource S4GmBox}" />
+                        <Button Content="设置CERA" Style="{StaticResource S4GmBtn}" Click="SetCharCera_Click" />
+                        <TextBlock Text="SP:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="CharSpBox" Width="45" Style="{StaticResource S4GmBox}" />
+                        <TextBlock Text="TP:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="CharTpBox" Width="45" Style="{StaticResource S4GmBox}" />
+                        <Button Content="调整SP/TP" Style="{StaticResource S4GmBtn}" Click="AdjustCharSpTp_Click" />
+                        <TextBlock Text="新名字:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="CharNameBox" Width="70" Style="{StaticResource S4GmBox}" />
+                        <Button Content="改名" Style="{StaticResource S4GmBtn}" Click="RenameChar_Click" />
+                        <Button Content="成长选项" Style="{StaticResource S4GmBtn}" Click="GetGrowOptions_Click" />
+                        <Button Content="专家职业" Style="{StaticResource S4GmBtn}" Click="GetExpertJob_Click" />
+                        <Button Content="查看物品" Style="{StaticResource S4GmBtn}" Click="ListCharItems_Click" />
+                        <TextBlock Text="成长转职:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="GrowFirstBox" Width="40" Style="{StaticResource S4GmBox}" />
+                        <TextBlock Text="觉醒:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="GrowSecondBox" Width="40" Style="{StaticResource S4GmBox}" />
+                        <Button Content="设置成长类型" Style="{StaticResource S4GmBtn}" Click="SetGrowType_Click" />
+                        <TextBlock Text="专家类型:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="ExpertTypeBox" Width="40" Style="{StaticResource S4GmBox}" />
+                        <TextBlock Text="等级:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="ExpertLevelBox" Width="40" Style="{StaticResource S4GmBox}" />
+                        <TextBlock Text="经验:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="ExpertExpBox" Width="60" Style="{StaticResource S4GmBox}" />
+                        <Button Content="设置专家职业" Style="{StaticResource S4GmBtn}" Click="SetExpertJob_Click" />
+                        <Button Content="专家拉满" Style="{StaticResource S4GmBtn}" Click="MaxExpertJob_Click" />
+                        <TextBlock Text="删物品ID:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="ItemRemoveTemplateBox" Width="60" Style="{StaticResource S4GmBox}" />
+                        <TextBlock Text="数量:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="ItemRemoveCountBox" Width="50" Style="{StaticResource S4GmBox}" Text="1" />
+                        <Button Content="删除物品" Style="{StaticResource S4GmBtn}" Click="RemoveItem_Click" />
+                    </WrapPanel>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="物品索引" Style="{StaticResource TabItemDark}">
+                <Grid Margin="4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBox x:Name="ItemSearchBox" Width="200" Style="{StaticResource S4GmBox}"
+                                 KeyDown="ItemSearchBox_KeyDown" />
+                        <Button Content="搜索" Style="{StaticResource S4GmBtn}" Click="SearchItems_Click" />
+                        <TextBlock Text="分类:" Style="{StaticResource S4GmLabel}" />
+                        <ComboBox x:Name="ItemCategoryCombo" Width="180" Style="{StaticResource S4GmCombo}"
+                                  SelectionChanged="ItemCategoryCombo_SelectionChanged" />
+                        <Button Content="刷新分类" Style="{StaticResource S4GmBtn}" Click="LoadItemCategories_Click" />
+                        <TextBlock Text="数量:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="ItemCountBox" Width="50" Style="{StaticResource S4GmBox}" Text="1" />
+                        <TextBlock Text="角色ID:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="ItemTargetCharBox" Width="60" Style="{StaticResource S4GmBox}" />
+                        <Button Content="发放到角色" Style="{StaticResource S4GmBtn}" Click="GiveItem_Click" />
+                        <Button Content="预览" Style="{StaticResource S4GmBtn}" Click="PreviewItem_Click" />
+                        <Border Width="40" Height="40" Background="#FF191A1F" BorderBrush="#FF2A2B31"
+                                BorderThickness="1" CornerRadius="8" Margin="4,0,0,0">
+                            <Image x:Name="ItemIconImage" Width="32" Height="32" Stretch="Uniform" />
+                        </Border>
+                    </StackPanel>
+                    <DataGrid x:Name="ItemGrid" Grid.Row="1" Style="{StaticResource S4GmGrid}" RowStyle="{StaticResource S4GmRow}"
+                              AutoGeneratingColumn="ItemGrid_AutoGeneratingColumn"
+                              SelectionChanged="ItemGrid_SelectionChanged" />
+                    <TextBlock x:Name="ItemDetailText" Grid.Row="2" Foreground="#FF9A9AAB"
+                               FontSize="12" TextWrapping="Wrap" MaxHeight="72" Margin="0,6,0,0" />
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="任务管理" Style="{StaticResource TabItemDark}">
+                <Grid Margin="4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Text="角色ID:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="QuestCharBox" Width="60" Style="{StaticResource S4GmBox}" />
+                        <TextBlock Text="搜索:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="QuestSearchBox" Width="140" Style="{StaticResource S4GmBox}" />
+                        <Button Content="列出任务" Style="{StaticResource S4GmBtn}" Click="ListQuests_Click" />
+                        <Button Content="搜索任务" Style="{StaticResource S4GmBtn}" Click="SearchQuests_Click" />
+                        <Button Content="主线概览" Style="{StaticResource S4GmBtn}" Click="MainQuestOverview_Click" />
+                        <Button Content="成就概览" Style="{StaticResource S4GmBtn}" Click="AchievementOverview_Click" />
+                        <Button Content="已完成" Style="{StaticResource S4GmBtn}" Click="ListClearedQuests_Click" />
+                    </StackPanel>
+                    <DataGrid x:Name="QuestGrid" Grid.Row="1" Style="{StaticResource S4GmGrid}" RowStyle="{StaticResource S4GmRow}"
+                              AutoGeneratingColumn="QuestGrid_AutoGeneratingColumn"
+                              SelectionChanged="QuestGrid_SelectionChanged" />
+                    <WrapPanel Grid.Row="2" Margin="0,6,0,0">
+                        <Button Content="标记完成" Style="{StaticResource S4GmBtn}" Click="MarkReadyQuest_Click" />
+                        <Button Content="强制完成" Style="{StaticResource S4GmBtn}" Click="ForceCompleteQuest_Click" />
+                        <Button Content="完成选中" Style="{StaticResource S4GmBtn}" Click="CompleteSelectedQuest_Click" />
+                        <Button Content="清除选中" Style="{StaticResource S4GmBtn}" Click="UnclearSelectedQuest_Click" />
+                        <Button Content="批量完成选中" Style="{StaticResource S4GmBtn}" Click="BatchCompleteQuests_Click" />
+                    </WrapPanel>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="邮件管理" Style="{StaticResource TabItemDark}">
+                <Grid Margin="4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <DataGrid x:Name="MailGrid" Style="{StaticResource S4GmGrid}" RowStyle="{StaticResource S4GmRow}"
+                              AutoGeneratingColumn="MailGrid_AutoGeneratingColumn" />
+                    <WrapPanel Grid.Row="1" Margin="0,6,0,0">
+                        <TextBlock Text="角色ID:" Style="{StaticResource S4GmLabel}" />
+                        <TextBox x:Name="MailCharBox" Width="60" Style="{StaticResource S4GmBox}" />
+                        <Button Content="刷新邮件" Style="{StaticResource S4GmBtn}" Click="RefreshMail_Click" />
+                        <Button Content="删除选中" Style="{StaticResource S4GmBtn}" Click="DeleteMail_Click" />
+                        <Button Content="清空邮箱" Style="{StaticResource S4GmBtn}" Click="ClearMail_Click" />
+                    </WrapPanel>
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+        <!-- 底部日志 -->
+        <Border Grid.Row="2" Background="#FF191A1F" BorderBrush="#FF2A2B31"
+                BorderThickness="0,1,0,0" Padding="10,6">
+            <TextBlock x:Name="LogText" Text="就绪" Foreground="#CCFFFFFF" FontSize="12"
+                       TextWrapping="Wrap" MaxHeight="60" />
+        </Border>
+    </Grid>
+</UserControl>

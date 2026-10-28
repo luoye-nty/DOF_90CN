@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "files": [
+    {
+      "path": "data/dnf/Script.pvf",
+      "required": true,
+      "size": 111095682,
+      "sha256": "EC7050524DDD2CB5126F4BC9ABAF438B602360CCCDBC15D1BE6AB291A2DC204A"
+    },
+    {
+      "path": "data/dnf/channel_info.etc",
+      "required": true,
+      "size": 20036,
+      "sha256": "4FC2EA9DC01A8E0C3FDC0E5079D372F6A6CA55BC967AA36F2ABC8DBA974CAB9D"
+    }
+  ]
+}
