@@ -734,6 +734,14 @@ constexpr uintptr_t kAutoRepairAuxLookupResumeRva = 0x01C69786;
 constexpr uintptr_t kAutoRepairAuxLoopDoneRva = 0x01C698EA;
 constexpr uintptr_t kOp24SceneModeRva = 0x01E64FD0;          // sub_2264FD0
 constexpr uintptr_t kOp24LoadingGateRva = 0x022C8DA0;        // sub_26C8DA0
+// Current EXE clears the native 256-entry keyboard table and rebuilds the
+// keyboard/IME context in its WM_CREATE input initializer.  Returning from a
+// dungeon rebuilds scene UI without rerunning that initializer, so confirm
+// dialogs can retain the prior scene's keyboard state.
+constexpr uintptr_t kNativeInputResetRva = 0x01D23320;       // sub_2123320
+constexpr uintptr_t kNativeKeyboardStateTableRva = 0x05CD0710;
+constexpr size_t kNativeKeyboardStateCount = 0x100;
+constexpr size_t kVirtualKeySpace = 0x20;
 constexpr uintptr_t kTownEntryStateRva = 0x04D9A290;         // unk_519A290
 constexpr uintptr_t kLocalOwnerServerRva = 0x04D99C4A;       // unk_5199C4A
 constexpr uintptr_t kLocalOwnerChannelRva = 0x04D99C49;      // byte_5199C49
@@ -9687,6 +9695,71 @@ void UpdateLuaDungeonEntryStateAfterDispatch(
         queued ? 1u : 0u);
 }
 
+// sub_2123320 is the current client's private WM_CREATE input initializer.
+// It expects ESI to contain the game HWND, so call it through a register-
+// preserving trampoline rather than treating it as a normal cdecl function.
+__declspec(naked) void InvokeNativeInputResetForTownReturn()
+{
+    __asm {
+        pushad
+        mov esi, dword ptr [g_dnfWindow]
+        mov eax, dword ptr [g_dnfBase]
+        add eax, 01D23320h
+        call eax
+        popad
+        ret
+    }
+}
+
+void ResetNativeInputAfterDungeonReturn()
+{
+    if (!g_dnfBase || !g_dnfWindow) {
+        LogLine("dungeon-return input reset skipped reason=missing-context "
+            "base=0x%08X window=%p",
+            static_cast<unsigned int>(g_dnfBase),
+            reinterpret_cast<void*>(g_dnfWindow));
+        return;
+    }
+
+    static const unsigned char kExpectedInputResetPrologue[] = {
+        0x6A, 0x00, 0xFF, 0x15, 0x64, 0x28, 0x1A, 0x04,
+        0x68, 0x00, 0x01, 0x00, 0x00, 0x6A, 0x00, 0x68,
+        0x10, 0x07, 0x0D, 0x06
+    };
+    const unsigned char* target = reinterpret_cast<const unsigned char*>(
+        g_dnfBase + kNativeInputResetRva);
+    if (!BytesMatch(target, kExpectedInputResetPrologue,
+            sizeof(kExpectedInputResetPrologue))) {
+        LogLine("dungeon-return input reset skipped reason=signature-mismatch "
+            "target=0x%08X expected=%02X%02X%02X%02X",
+            static_cast<unsigned int>(g_dnfBase + kNativeInputResetRva),
+            target[0], target[1], target[2], target[3]);
+        return;
+    }
+
+    volatile unsigned char* keyboardState =
+        reinterpret_cast<volatile unsigned char*>(
+            g_dnfBase + kNativeKeyboardStateTableRva);
+    unsigned char spaceBefore = 0;
+    unsigned char spaceAfter = 0;
+    __try {
+        spaceBefore = keyboardState[kVirtualKeySpace];
+        InvokeNativeInputResetForTownReturn();
+        spaceAfter = keyboardState[kVirtualKeySpace];
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        LogLine("dungeon-return input reset fault window=%p code=0x%08X",
+            reinterpret_cast<void*>(g_dnfWindow), GetExceptionCode());
+        return;
+    }
+
+    LogLine("dungeon-return input reset applied window=%p "
+        "space_before=%u space_after=%u",
+        reinterpret_cast<void*>(g_dnfWindow),
+        static_cast<unsigned int>(spaceBefore),
+        static_cast<unsigned int>(spaceAfter));
+}
+
 void QueueLuaEnterTownEventIfAccepted(
     int packet,
     unsigned int sceneModeCalls,
@@ -9760,6 +9833,9 @@ void QueueLuaEnterTownEventIfAccepted(
     // An accepted town transition closes any pending or active dungeon-entry
     // lifecycle. The next event must begin with a fresh typed op28 packet.
     LuaDungeonEntryStage previousDungeonStage = g_luaDungeonEntryStage;
+    if (previousDungeonStage == kLuaDungeonEntryActive) {
+        ResetNativeInputAfterDungeonReturn();
+    }
     LuaClientEventContext leaveContext =
         BuildLuaDungeonClientEventContext();
     g_luaDungeonEntryStage = kLuaDungeonEntryIdle;
