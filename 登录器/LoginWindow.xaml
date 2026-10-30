@@ -12,10 +12,9 @@
                ResizeMode="NoResize"
                WindowStyle="None"
                SysButtonVisible="Collapsed"
-               Background="Transparent"
-               AllowsTransparency="True"
+               Background="#FF080C18"
+               AllowsTransparency="False"
                BorderThickness="0"
-               Opacity="0"
                UseLayoutRounding="True"
                WindowStartupLocation="CenterScreen"
                Loaded="Window_Loaded">
@@ -104,12 +103,13 @@
         </Style>
     </adu:AduWindow.Resources>
 
-    <Grid Background="Transparent">
+    <Grid Background="#FF080C18">
         <!-- 窗口背景层 -->
         <Grid x:Name="RootContainer"
               Grid.RowSpan="2"
               ClipToBounds="True"
               Background="#FF101014"
+              Opacity="0"
               MouseLeftButtonDown="RootContainer_MouseLeftButtonDown">
             <!-- 轮换背景双图层：Fill 拉伸铺满全窗，完整显示不裁剪，任意分辨率无黑边 -->
             <Image x:Name="BackgroundLayer1"

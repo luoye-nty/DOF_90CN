@@ -11,6 +11,7 @@ namespace DNFLogin
     {
         private Mutex? _mutex;
         private EventWaitHandle? _showSignal;
+        private static StartupSplashWindow? _startupSplash;
 
         protected override void OnStartup(StartupEventArgs e)
         {
@@ -37,6 +38,8 @@ namespace DNFLogin
                 Shutdown();
                 return;
             }
+
+            ShowStartupSplash();
 
             // 启动时读取持久化配置（AppData\DNFLogin\config.json）
             AppConfig.Load();
@@ -84,6 +87,34 @@ namespace DNFLogin
             })
             { IsBackground = true };
             watcher.Start();
+        }
+
+        private static void ShowStartupSplash()
+        {
+            try
+            {
+                _startupSplash = new StartupSplashWindow();
+                _startupSplash.Show();
+            }
+            catch
+            {
+                // A splash failure must never prevent the launcher from starting.
+                _startupSplash = null;
+            }
+        }
+
+        public static void CloseStartupSplash()
+        {
+            var splash = _startupSplash;
+            _startupSplash = null;
+            try
+            {
+                splash?.Close();
+            }
+            catch
+            {
+                // Already closed or the compositor is shutting down.
+            }
         }
 
         private static string CrashLogPath => Path.Combine(

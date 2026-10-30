@@ -8,7 +8,7 @@ namespace DNFLogin.Services
     /// <summary>
     /// 90CN.dll 内嵌资源完整性辅助：读取程序集内嵌的 90CN.dll（DNFLogin.Resources.90CN.dll，
     /// csproj EmbeddedResource 全版本携带）SHA256，与客户端目录中的 90CN.dll 比对，
-    /// 由调用方（启动自检 / 启动游戏前复检）在缺失或哈希不一致时弹窗询问后写入/覆盖（不备份）。
+    /// 由调用方（启动自检 / 启动游戏前复检）在缺失或哈希不一致时直接写入/覆盖（不弹确认、不备份）。
     /// </summary>
     public static class Cn90DllHelper
     {

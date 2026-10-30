@@ -1,0 +1,55 @@
+<Window x:Class="DNFLogin.StartupSplashWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title=""
+        Width="560"
+        Height="230"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Topmost="True"
+        WindowStartupLocation="CenterScreen">
+    <Grid Background="Transparent">
+        <StackPanel HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+            <Image Source="pack://application:,,,/Assets/logo.png"
+                   Width="280"
+                   Height="112"
+                   Stretch="Uniform"
+                   HorizontalAlignment="Center"
+                   RenderOptions.BitmapScalingMode="HighQuality">
+                <Image.Effect>
+                    <DropShadowEffect BlurRadius="16"
+                                      Color="#5DDDFF"
+                                      ShadowDepth="0"
+                                      Opacity="0.38" />
+                </Image.Effect>
+            </Image>
+
+            <TextBlock Text="正在打开落叶DNF登录器"
+                       Margin="0,30,0,0"
+                       HorizontalAlignment="Center"
+                       FontFamily="Microsoft YaHei UI"
+                       FontSize="18"
+                       FontWeight="Normal">
+                <TextBlock.Foreground>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#78ECFF" Offset="0" />
+                        <GradientStop Color="#95B3FF" Offset="0.36" />
+                        <GradientStop Color="#CF8EFF" Offset="0.72" />
+                        <GradientStop Color="#FFD080" Offset="1" />
+                    </LinearGradientBrush>
+                </TextBlock.Foreground>
+                <TextBlock.Effect>
+                    <DropShadowEffect BlurRadius="8"
+                                      Color="#B5000000"
+                                      ShadowDepth="1"
+                                      Opacity="0.9" />
+                </TextBlock.Effect>
+            </TextBlock>
+        </StackPanel>
+    </Grid>
+</Window>

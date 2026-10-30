@@ -26,7 +26,7 @@ namespace DNFLogin.Services
     ///   3. 版本与 LauncherVersion.Current **完全一致** → 放行；
     ///   4. 版本不符：
     ///        · 服务端没填直链 → 弹「请联系管理员」并**禁止进入登录界面**；
-    ///        · 有直链         → 弹强制更新窗口，下载 → 解压 → 删原登录器 → 打开新版本，
+    ///        · 有直链         → 启动自检时在加载页内更新；登录前复查仍使用旧更新窗口兜底，
     ///                           **更新完成前禁止进入登录界面**。
     ///
     /// ── 两个调用点（需求确认过的口径：两处都要查）──────────────────────────────
@@ -46,14 +46,16 @@ namespace DNFLogin.Services
         /// 启动自检阶段的版本校验。
         /// 返回 UpdateLaunched 时调用方必须立刻 return（本进程即将退出，别再往下走自检）。
         /// </summary>
-        public static Task<LauncherVersionGateResult> RunSelfCheckAsync(Window? owner)
-            => CheckCoreAsync(owner, "启动自检");
+        public static Task<LauncherVersionGateResult> RunSelfCheckAsync(
+            Window? owner,
+            Func<RemoteAuthService.LauncherVersionInfo, Task<bool>>? inlineUpdater = null)
+            => CheckCoreAsync(owner, "启动自检", inlineUpdater);
 
         /// <summary>
         /// 玩家点「登录」时的版本复查（登录前闸门里调用，认证之前）。
         /// </summary>
         public static Task<LauncherVersionGateResult> CheckBeforeLoginAsync(Window? owner)
-            => CheckCoreAsync(owner, "登录前");
+            => CheckCoreAsync(owner, "登录前", null);
 
         /// <summary>
         /// 是否跳过校验：只有"根本没配服务器地址"这一种情况跳过。
@@ -92,7 +94,10 @@ namespace DNFLogin.Services
             return (host, port);
         }
 
-        private static async Task<LauncherVersionGateResult> CheckCoreAsync(Window? owner, string phase)
+        private static async Task<LauncherVersionGateResult> CheckCoreAsync(
+            Window? owner,
+            string phase,
+            Func<RemoteAuthService.LauncherVersionInfo, Task<bool>>? inlineUpdater)
         {
             if (ShouldSkip())
             {
@@ -142,6 +147,24 @@ namespace DNFLogin.Services
                     "（管理员已开启版本校验，但没有配置下载地址，因此无法自动更新。）",
                     "登录器版本需要更新", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return LauncherVersionGateResult.Blocked;
+            }
+
+            if (inlineUpdater is not null)
+            {
+                var applied = false;
+                try
+                {
+                    applied = await inlineUpdater(info).ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    App.LogStartup("LauncherVersionGuard(" + phase + "): 加载页内更新异常 -> " + ex);
+                }
+
+                App.LogStartup("LauncherVersionGuard(" + phase + "): 加载页内更新结束 applied=" + applied +
+                               "，退出登录器");
+                ShutdownForUpdate();
+                return applied ? LauncherVersionGateResult.UpdateLaunched : LauncherVersionGateResult.Blocked;
             }
 
             return RunUpdateFlow(owner, info);

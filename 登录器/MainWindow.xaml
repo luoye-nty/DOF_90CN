@@ -1,121 +1,475 @@
-﻿<adu:AduWindow x:Class="DNFLogin.MainWindow"
+<adu:AduWindow x:Class="DNFLogin.MainWindow"
                x:Name="RootWindow"
                xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                xmlns:adu="clr-namespace:AduSkin.Controls.Metro;assembly=AduSkin"
                Title="落叶DNF登录器"
                Icon="pack://application:,,,/Assets/DNF.ico"
-               Width="516"
-               Height="312"
+               Width="1280"
+               Height="728"
                ResizeMode="NoResize"
                WindowStyle="None"
-               Background="Transparent"
-               AllowsTransparency="True"
+               Background="#FF030711"
+               AllowsTransparency="False"
                BorderThickness="0"
-               Opacity="0"
                UseLayoutRounding="True"
-               WindowStartupLocation="CenterScreen"
-               Loaded="Window_Loaded">
-    <Grid Background="Transparent">
+               SnapsToDevicePixels="True"
+               WindowStartupLocation="Manual"
+               Left="-32000"
+               Top="-32000"
+               Loaded="Window_Loaded"
+               PreviewKeyDown="Window_PreviewKeyDown">
+    <adu:AduWindow.Resources>
+        <Style x:Key="SkipAnimationButtonStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="#DFF7FF" />
+            <Setter Property="Background" Value="#010B1720" />
+            <Setter Property="BorderBrush" Value="#657EDFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="Normal" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Padding" Value="20,8" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#2478E6FF" />
+                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#CCB8F4FF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#3470D7FF" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.35" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Storyboard x:Key="LoadingIntroStoryboard"
+                    Completed="LoadingIntroStoryboard_Completed">
+            <DoubleAnimation Storyboard.TargetName="BackdropImage"
+                             Storyboard.TargetProperty="Opacity"
+                             From="0"
+                             To="1"
+                             Duration="0:0:1.35">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseOut" />
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+
+            <DoubleAnimation Storyboard.TargetName="BackdropScale"
+                             Storyboard.TargetProperty="ScaleX"
+                             From="1.07"
+                             To="1"
+                             Duration="0:0:8">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseOut" />
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+            <DoubleAnimation Storyboard.TargetName="BackdropScale"
+                             Storyboard.TargetProperty="ScaleY"
+                             From="1.07"
+                             To="1"
+                             Duration="0:0:8">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseOut" />
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="StreakLayer"
+                                           Storyboard.TargetProperty="Opacity">
+                <LinearDoubleKeyFrame KeyTime="0:0:0" Value="0" />
+                <LinearDoubleKeyFrame KeyTime="0:0:0.18" Value="1" />
+                <LinearDoubleKeyFrame KeyTime="0:0:2.4" Value="1" />
+                <LinearDoubleKeyFrame KeyTime="0:0:3" Value="0" />
+            </DoubleAnimationUsingKeyFrames>
+            <DoubleAnimation Storyboard.TargetName="Ribbon1Translate"
+                             Storyboard.TargetProperty="X"
+                             From="-1100" To="920" BeginTime="0:0:0.05" Duration="0:0:2.3">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseInOut" />
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+            <DoubleAnimation Storyboard.TargetName="Ribbon2Translate"
+                             Storyboard.TargetProperty="X"
+                             From="1100" To="-920" BeginTime="0:0:0.18" Duration="0:0:2.3">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseInOut" />
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="OutlineImage"
+                                           Storyboard.TargetProperty="Opacity">
+                <LinearDoubleKeyFrame KeyTime="0:0:0" Value="0" />
+                <EasingDoubleKeyFrame KeyTime="0:0:0.55" Value="0.1">
+                    <EasingDoubleKeyFrame.EasingFunction>
+                        <SineEase EasingMode="EaseIn" />
+                    </EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <EasingDoubleKeyFrame KeyTime="0:0:3.85" Value="1">
+                    <EasingDoubleKeyFrame.EasingFunction>
+                        <SineEase EasingMode="EaseOut" />
+                    </EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <LinearDoubleKeyFrame KeyTime="0:0:4.6" Value="1" />
+                <EasingDoubleKeyFrame KeyTime="0:0:5.55" Value="0">
+                    <EasingDoubleKeyFrame.EasingFunction>
+                        <CubicEase EasingMode="EaseInOut" />
+                    </EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+            </DoubleAnimationUsingKeyFrames>
+
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="CharacterScale"
+                                           Storyboard.TargetProperty="ScaleX">
+                <LinearDoubleKeyFrame KeyTime="0:0:0" Value="0.88" />
+                <EasingDoubleKeyFrame KeyTime="0:0:4.5" Value="0.94">
+                    <EasingDoubleKeyFrame.EasingFunction>
+                        <QuadraticEase EasingMode="EaseOut" />
+                    </EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <EasingDoubleKeyFrame KeyTime="0:0:4.86" Value="1.055">
+                    <EasingDoubleKeyFrame.EasingFunction>
+                        <CubicEase EasingMode="EaseOut" />
+                    </EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <EasingDoubleKeyFrame KeyTime="0:0:5.8" Value="1">
+                    <EasingDoubleKeyFrame.EasingFunction>
+                        <SineEase EasingMode="EaseInOut" />
+                    </EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <LinearDoubleKeyFrame KeyTime="0:0:8" Value="1" />
+            </DoubleAnimationUsingKeyFrames>
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="CharacterScale"
+                                           Storyboard.TargetProperty="ScaleY">
+                <LinearDoubleKeyFrame KeyTime="0:0:0" Value="0.88" />
+                <EasingDoubleKeyFrame KeyTime="0:0:4.5" Value="0.94">
+                    <EasingDoubleKeyFrame.EasingFunction>
+                        <QuadraticEase EasingMode="EaseOut" />
+                    </EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <EasingDoubleKeyFrame KeyTime="0:0:4.86" Value="1.055">
+                    <EasingDoubleKeyFrame.EasingFunction>
+                        <CubicEase EasingMode="EaseOut" />
+                    </EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <EasingDoubleKeyFrame KeyTime="0:0:5.8" Value="1">
+                    <EasingDoubleKeyFrame.EasingFunction>
+                        <SineEase EasingMode="EaseInOut" />
+                    </EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <LinearDoubleKeyFrame KeyTime="0:0:8" Value="1" />
+            </DoubleAnimationUsingKeyFrames>
+
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="CharacterBlur"
+                                           Storyboard.TargetProperty="Radius">
+                <LinearDoubleKeyFrame KeyTime="0:0:0" Value="6" />
+                <LinearDoubleKeyFrame KeyTime="0:0:4.4" Value="5" />
+                <LinearDoubleKeyFrame KeyTime="0:0:4.8" Value="2.5" />
+                <EasingDoubleKeyFrame KeyTime="0:0:5.7" Value="0">
+                    <EasingDoubleKeyFrame.EasingFunction>
+                        <CubicEase EasingMode="EaseOut" />
+                    </EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <LinearDoubleKeyFrame KeyTime="0:0:8" Value="0" />
+            </DoubleAnimationUsingKeyFrames>
+
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="OpenEyesImage"
+                                           Storyboard.TargetProperty="Opacity">
+                <LinearDoubleKeyFrame KeyTime="0:0:0" Value="0" />
+                <LinearDoubleKeyFrame KeyTime="0:0:4.48" Value="0" />
+                <EasingDoubleKeyFrame KeyTime="0:0:4.72" Value="0.24">
+                    <EasingDoubleKeyFrame.EasingFunction>
+                        <CubicEase EasingMode="EaseOut" />
+                    </EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <EasingDoubleKeyFrame KeyTime="0:0:5.55" Value="1">
+                    <EasingDoubleKeyFrame.EasingFunction>
+                        <CubicEase EasingMode="EaseInOut" />
+                    </EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <LinearDoubleKeyFrame KeyTime="0:0:8" Value="1" />
+            </DoubleAnimationUsingKeyFrames>
+
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="CharacterAura"
+                                           Storyboard.TargetProperty="Opacity">
+                <LinearDoubleKeyFrame KeyTime="0:0:0" Value="0" />
+                <EasingDoubleKeyFrame KeyTime="0:0:0.8" Value="0.3">
+                    <EasingDoubleKeyFrame.EasingFunction>
+                        <CubicEase EasingMode="EaseOut" />
+                    </EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <EasingDoubleKeyFrame KeyTime="0:0:4.5" Value="0.55">
+                    <EasingDoubleKeyFrame.EasingFunction>
+                        <SineEase EasingMode="EaseInOut" />
+                    </EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <LinearDoubleKeyFrame KeyTime="0:0:8" Value="0.32" />
+            </DoubleAnimationUsingKeyFrames>
+
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="CompletionFlash"
+                                           Storyboard.TargetProperty="Opacity">
+                <LinearDoubleKeyFrame KeyTime="0:0:0" Value="0" />
+                <LinearDoubleKeyFrame KeyTime="0:0:4.55" Value="0" />
+                <EasingDoubleKeyFrame KeyTime="0:0:4.84" Value="0.58">
+                    <EasingDoubleKeyFrame.EasingFunction>
+                        <CubicEase EasingMode="EaseOut" />
+                    </EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <EasingDoubleKeyFrame KeyTime="0:0:5.5" Value="0">
+                    <EasingDoubleKeyFrame.EasingFunction>
+                        <CubicEase EasingMode="EaseOut" />
+                    </EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+            </DoubleAnimationUsingKeyFrames>
+        </Storyboard>
+    </adu:AduWindow.Resources>
+
+    <Grid Background="#030711">
         <Grid x:Name="RootContainer"
               ClipToBounds="True"
-              MouseLeftButtonDown="RootContainer_MouseLeftButtonDown">
-            <Grid.Background>
-                <ImageBrush x:Name="BackgroundImageBrush"
-                            Stretch="UniformToFill"
-                            AlignmentX="Center"
-                            AlignmentY="Center" />
-            </Grid.Background>
+              MouseLeftButtonDown="RootContainer_MouseLeftButtonDown"
+              RenderTransformOrigin="0.5,0.5">
+            <Grid.RenderTransform>
+                <ScaleTransform x:Name="BackdropScale" ScaleX="1" ScaleY="1" />
+            </Grid.RenderTransform>
+
+            <Image x:Name="BackdropImage"
+                   Source="pack://application:,,,/Assets/loading-background.jpg"
+                   Stretch="UniformToFill"
+                   Opacity="0"
+                   RenderOptions.BitmapScalingMode="HighQuality" />
+
+            <Canvas x:Name="StreakLayer"
+                    IsHitTestVisible="False"
+                    Opacity="0"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Width="1280"
+                    Height="728">
+                <Path x:Name="Ribbon1"
+                      Data="M -420,260 C -100,80 160,520 450,320 S 800,100 1080,340 S 1390,560 1660,310"
+                      StrokeThickness="3.2"
+                      StrokeStartLineCap="Round"
+                      StrokeEndLineCap="Round">
+                    <Path.Stroke>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="#003BE8FF" Offset="0" />
+                            <GradientStop Color="#FF67E8FF" Offset="0.28" />
+                            <GradientStop Color="#FFAE78FF" Offset="0.66" />
+                            <GradientStop Color="#00FF9AD5" Offset="1" />
+                        </LinearGradientBrush>
+                    </Path.Stroke>
+                    <Path.RenderTransform>
+                        <TranslateTransform x:Name="Ribbon1Translate" X="-1100" />
+                    </Path.RenderTransform>
+                    <Path.Effect>
+                        <DropShadowEffect BlurRadius="18" Color="#66DFFF" ShadowDepth="0" Opacity="0.95" />
+                    </Path.Effect>
+                </Path>
+                <Path x:Name="Ribbon2"
+                      Data="M -420,500 C -100,700 160,250 450,480 S 800,700 1080,400 S 1390,160 1660,430"
+                      StrokeThickness="2.7"
+                      StrokeStartLineCap="Round"
+                      StrokeEndLineCap="Round">
+                    <Path.Stroke>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="#00FF86D8" Offset="0" />
+                            <GradientStop Color="#F0FFC15E" Offset="0.45" />
+                            <GradientStop Color="#E88A73FF" Offset="0.74" />
+                            <GradientStop Color="#00D5A4FF" Offset="1" />
+                        </LinearGradientBrush>
+                    </Path.Stroke>
+                    <Path.RenderTransform>
+                        <TranslateTransform x:Name="Ribbon2Translate" X="1100" />
+                    </Path.RenderTransform>
+                    <Path.Effect>
+                        <DropShadowEffect BlurRadius="16" Color="#C678FF" ShadowDepth="0" Opacity="0.9" />
+                    </Path.Effect>
+                </Path>
+            </Canvas>
+
+            <Grid x:Name="CharacterStage"
+                  Width="470"
+                  Height="620"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Top"
+                  Margin="0,47,0,0"
+                  RenderTransformOrigin="0.5,0.5"
+                  IsHitTestVisible="False">
+                <Grid.RenderTransform>
+                    <ScaleTransform x:Name="CharacterScale" ScaleX="0.88" ScaleY="0.88" />
+                </Grid.RenderTransform>
+
+                <Ellipse x:Name="CharacterAura"
+                         Width="430"
+                         Height="590"
+                         HorizontalAlignment="Center"
+                         VerticalAlignment="Center"
+                         Opacity="0">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#6675E5FF" Offset="0" />
+                            <GradientStop Color="#337B6CFF" Offset="0.48" />
+                            <GradientStop Color="#00000000" Offset="1" />
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                    <Ellipse.Effect>
+                        <BlurEffect Radius="24" />
+                    </Ellipse.Effect>
+                </Ellipse>
+
+                <Image x:Name="OutlineImage"
+                       Source="pack://application:,,,/Assets/loading-seria-outline.png"
+                       Stretch="Uniform"
+                       Opacity="0"
+                       IsHitTestVisible="False"
+                       RenderOptions.BitmapScalingMode="HighQuality">
+                    <Image.Effect>
+                        <BlurEffect Radius="1.2" />
+                    </Image.Effect>
+                </Image>
+
+                <Grid x:Name="CharacterGroup"
+                      Opacity="1">
+                    <Grid.Effect>
+                        <BlurEffect x:Name="CharacterBlur" Radius="8" />
+                    </Grid.Effect>
+                    <Image x:Name="OpenEyesImage"
+                           Source="pack://application:,,,/Assets/loading-seria-open.png"
+                           Stretch="Uniform"
+                           Opacity="0"
+                           RenderOptions.BitmapScalingMode="HighQuality" />
+                </Grid>
+
+                <Border x:Name="CompletionFlash"
+                        IsHitTestVisible="False"
+                        Opacity="0"
+                        Margin="-90">
+                    <Border.Background>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#E8FFFFFF" Offset="0" />
+                            <GradientStop Color="#8FCDEBFF" Offset="0.32" />
+                            <GradientStop Color="#001E4B8A" Offset="1" />
+                        </RadialGradientBrush>
+                    </Border.Background>
+                    <Border.Effect>
+                        <BlurEffect Radius="18" />
+                    </Border.Effect>
+                </Border>
+            </Grid>
         </Grid>
 
-        <StackPanel Orientation="Horizontal"
-                    Margin="24,20,24,0"
+        <Image Source="pack://application:,,,/Assets/logo.png"
+               Height="30"
+               Margin="34,24,0,0"
+               HorizontalAlignment="Left"
+               VerticalAlignment="Top"
+               Opacity="0.62"
+               IsHitTestVisible="False" />
+
+        <Grid Width="760"
+              Height="18"
+              Margin="0,0,0,42"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Bottom">
+            <Border Height="4"
+                    VerticalAlignment="Center"
+                    CornerRadius="2"
+                    Background="#70070E21"
+                    BorderBrush="#406C8FD5"
+                    BorderThickness="1" />
+            <Border Height="4"
+                    VerticalAlignment="Center"
+                    CornerRadius="2"
+                    Background="#5A2A3655" />
+            <Border x:Name="ProgressGlow"
+                    Height="12"
+                    VerticalAlignment="Center"
+                    Opacity="0.24"
                     HorizontalAlignment="Left"
-                    VerticalAlignment="Top">
-            <Image Source="pack://application:,,,/Assets/logo.png"
-                   Height="40"
-                   Stretch="Uniform"
-                   VerticalAlignment="Center" />
-            <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType=adu:AduWindow}}"
-                       Foreground="White"
-                       FontSize="16"
-                       FontWeight="Normal"
-                       Margin="14,0,0,0"
-                       VerticalAlignment="Center">
-                <TextBlock.Effect>
-                    <DropShadowEffect BlurRadius="10" ShadowDepth="0" Opacity="0.75" />
-                </TextBlock.Effect>
-            </TextBlock>
-        </StackPanel>
+                    CornerRadius="6"
+                    RenderTransformOrigin="0,0.5">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#002EDEFF" Offset="0" />
+                        <GradientStop Color="#B36BE6FF" Offset="0.7" />
+                        <GradientStop Color="#D3A28CFF" Offset="1" />
+                    </LinearGradientBrush>
+                </Border.Background>
+                <Border.RenderTransform>
+                    <ScaleTransform x:Name="ProgressGlowScale" ScaleX="0" />
+                </Border.RenderTransform>
+                <Border.Effect>
+                    <BlurEffect Radius="9" />
+                </Border.Effect>
+            </Border>
+            <Border x:Name="ProgressFill"
+                    Height="4"
+                    VerticalAlignment="Center"
+                    CornerRadius="2"
+                    RenderTransformOrigin="0,0.5">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#FF39D8FF" Offset="0" />
+                        <GradientStop Color="#FF74B9FF" Offset="0.68" />
+                        <GradientStop Color="#FF9C82FF" Offset="1" />
+                    </LinearGradientBrush>
+                </Border.Background>
+                <Border.RenderTransform>
+                    <ScaleTransform x:Name="ProgressFillScale" ScaleX="0" />
+                </Border.RenderTransform>
+            </Border>
+            <Border Width="2"
+                    Height="12"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Center"
+                    Background="#E6CBFAFF"
+                    Opacity="0"
+                    x:Name="ProgressTip">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="11" Color="#80DFFF" ShadowDepth="0" Opacity="0.95" />
+                </Border.Effect>
+            </Border>
+        </Grid>
 
-        <Border VerticalAlignment="Bottom"
-                Padding="24,14"
-                Background="#C0000000">
-            <StackPanel>
-                <TextBlock x:Name="StepTitleText"
-                           Text="准备更新..."
-                           Foreground="White"
-                           FontSize="16"
-                           FontWeight="SemiBold" />
-                <TextBlock x:Name="StepDetailText"
-                           Text="正在初始化"
-                           Foreground="#CCFFFFFF"
-                           FontSize="12"
-                           TextWrapping="Wrap"
-                           Margin="0,4,0,0" />
+        <TextBlock x:Name="UpdateStatusText"
+                   MaxWidth="980"
+                   Margin="0,0,0,14"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Bottom"
+                   Foreground="#E0D8F5FF"
+                   FontSize="13"
+                   FontWeight="Normal"
+                   TextAlignment="Center"
+                   TextTrimming="CharacterEllipsis"
+                   Visibility="Collapsed" />
 
-                <StackPanel Margin="0,12,0,0">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="当前步骤"
-                                   Foreground="#F0FFFFFF"
-                                   FontSize="13" />
-                        <TextBlock x:Name="StepPercentText"
-                                   Grid.Column="1"
-                                   Text="0%"
-                                   Foreground="#F0FFFFFF"
-                                   FontSize="13" />
-                    </Grid>
-                    <ProgressBar x:Name="StepProgressBar"
-                                 Height="8"
-                                 Minimum="0"
-                                 Maximum="100"
-                                 Value="0"
-                                 Margin="0,4,0,0"
-                                 Foreground="#FF2ECC71"
-                                 Background="#25FFFFFF"
-                                 BorderThickness="0" />
-                </StackPanel>
+        <Button x:Name="SkipAnimationButton"
+                Content="Space 跳过动画"
+                Style="{StaticResource SkipAnimationButtonStyle}"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Margin="0,0,34,80"
+                Visibility="Collapsed"
+                Click="SkipAnimationButton_Click" />
 
-                <StackPanel Margin="0,10,0,0">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="总体进度"
-                                   Foreground="#F0FFFFFF"
-                                   FontSize="13" />
-                        <TextBlock x:Name="TotalPercentText"
-                                   Grid.Column="1"
-                                   Text="0%"
-                                   Foreground="#F0FFFFFF"
-                                   FontSize="13" />
-                    </Grid>
-                    <ProgressBar x:Name="TotalProgressBar"
-                                 Height="8"
-                                 Minimum="0"
-                                 Maximum="100"
-                                 Value="0"
-                                 Margin="0,4,0,0"
-                                 Foreground="#FF2ECC71"
-                                 Background="#25FFFFFF"
-                                 BorderThickness="0" />
-                </StackPanel>
-            </StackPanel>
-        </Border>
+        <Border x:Name="TransitionOverlay"
+                Background="#FF030711"
+                Opacity="0"
+                IsHitTestVisible="False"
+                Panel.ZIndex="100" />
     </Grid>
 </adu:AduWindow>

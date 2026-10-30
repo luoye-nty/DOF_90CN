@@ -72,8 +72,11 @@ namespace DNFLogin.Services
     /// </summary>
     public static class LauncherSelfUpdater
     {
-        /// <summary>下载超时：与 PvfUpdateDialog 同口径（30 秒无响应即失败）。</summary>
-        private static readonly TimeSpan DownloadTimeout = TimeSpan.FromSeconds(30);
+        /// <summary>
+        /// 整个更新包的下载上限。单文件登录器约 130 MB，不能沿用短接口的 30 秒超时，
+        /// 否则慢速网络会在正常下载过程中被强制判定失败。
+        /// </summary>
+        private static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(30);
 
         /// <summary>挑登录器 exe 时的体积下限：小于这个大小的 exe 基本不可能是登录器（单文件发布约 14MB）。</summary>
         private const long MinLauncherExeBytes = 512 * 1024;

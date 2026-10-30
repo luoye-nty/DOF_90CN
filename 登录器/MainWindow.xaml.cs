@@ -1,14 +1,13 @@
 using AduSkin.Controls.Metro;
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using System.Windows.Media.Imaging;
 
 namespace DNFLogin
 {
@@ -28,12 +27,17 @@ namespace DNFLogin
     /// </summary>
     public partial class MainWindow : AduWindow
     {
-        private static readonly Uri DefaultBackgroundUri = new("pack://application:,,,/Assets/bg-default-Bg1.jpg", UriKind.Absolute);
-        private static readonly Uri DefaultIconUri = new("pack://application:,,,/Assets/login-icon.ico", UriKind.Absolute);
-
-        private ImageBrush? _backgroundBrush;
+        private static readonly TimeSpan LoadingAnimationDuration = TimeSpan.FromSeconds(8);
+        private static readonly TimeSpan CharacterRevealDuration = TimeSpan.FromSeconds(5.7);
+        private readonly TaskCompletionSource<bool> _introFinished =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private Storyboard? _introStoryboard;
         private bool _hasShown;
         private bool _loginWindowOpened;
+        private bool _checksCompleted;
+        private bool _animationCompleted;
+        private bool _launcherUpdating;
+        private double _progressTarget;
 
         /// <summary>最近一次启动自检结果，供 LoginWindow 读取后自动跳转设置页</summary>
         public static StartupCheckResult? LastCheckResult { get; set; }
@@ -42,12 +46,22 @@ namespace DNFLogin
         {
             InitializeComponent();
             Title = "";
-            SetDefaultBackground();
         }
 
-        private void Window_Loaded(object sender, RoutedEventArgs e)
+        private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            _ = RunDemoFlowAsync();
+            StartLoadingIntro();
+
+            // Local design-review mode: render the full intro without touching
+            // launcher settings, network services, shortcuts, or client files.
+            if (string.Equals(Environment.GetEnvironmentVariable("DNF90_LOADING_PREVIEW"), "1",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                App.LogStartup("LoadingIntro: preview mode enabled; startup checks skipped");
+                return;
+            }
+
+            await RunDemoFlowAsync();
         }
 
         protected override void OnContentRendered(EventArgs e)
@@ -60,7 +74,31 @@ namespace DNFLogin
             }
 
             _hasShown = true;
+            _ = RevealAfterFirstPaintAsync();
+        }
+
+        private async Task RevealAfterFirstPaintAsync()
+        {
+            // Keep the native splash visible while this window finishes its first
+            // composition off-screen. Only then move it into place and dismiss the
+            // splash, preventing the uncovered white frame between them.
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+            await Task.Delay(220).ConfigureAwait(true);
+            CenterOnScreen();
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+            // Keep the transparent splash above the loading window until the
+            // first animated frames have actually reached the compositor.
+            await Task.Delay(560).ConfigureAwait(true);
+            App.CloseStartupSplash();
             FadeInWindow();
+        }
+
+        private void CenterOnScreen()
+        {
+            var workArea = SystemParameters.WorkArea;
+            Left = workArea.Left + Math.Max(0, (workArea.Width - ActualWidth) / 2);
+            Top = workArea.Top + Math.Max(0, (workArea.Height - ActualHeight) / 2);
+            WindowStartupLocation = WindowStartupLocation.Manual;
         }
 
         private void RootContainer_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -88,32 +126,100 @@ namespace DNFLogin
             BeginAnimation(OpacityProperty, animation);
         }
 
-        private ImageBrush? TryGetBackgroundBrush()
+        private void StartLoadingIntro()
         {
-            if (_backgroundBrush is not null)
-            {
-                return _backgroundBrush;
-            }
-
-            _backgroundBrush = FindName("BackgroundImageBrush") as ImageBrush;
-            return _backgroundBrush;
-        }
-
-        private void SetDefaultBackground()
-        {
-            if (TryGetBackgroundBrush() is not ImageBrush brush)
+            if (_introStoryboard is not null)
             {
                 return;
             }
 
-            var bitmap = new BitmapImage();
-            bitmap.BeginInit();
-            bitmap.UriSource = DefaultBackgroundUri;
-            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.EndInit();
-            bitmap.Freeze();
+            _introStoryboard = (Storyboard)FindResource("LoadingIntroStoryboard");
+            // Progress fill/glow move by width; their scale placeholder stays neutral.
+            ProgressFillScale.ScaleX = 1;
+            ProgressGlowScale.ScaleX = 1;
+            _introStoryboard.Begin(this, HandoffBehavior.SnapshotAndReplace, true);
+            _ = CompleteCharacterRevealAsync();
+        }
 
-            brush.ImageSource = bitmap;
+        private async Task CompleteCharacterRevealAsync()
+        {
+            await Task.Delay(CharacterRevealDuration).ConfigureAwait(true);
+            if (_animationCompleted)
+            {
+                return;
+            }
+
+            try
+            {
+                // The character is already fully visible at this point. Pause here
+                // instead of spending the remaining tail on an idle final frame.
+                _introStoryboard?.Pause(this);
+            }
+            catch
+            {
+                // The storyboard may already be closing with the window.
+            }
+
+            App.LogStartup("LoadingIntro: 人物完整出现，动画进入最终帧");
+            MarkIntroComplete();
+        }
+
+        private void LoadingIntroStoryboard_Completed(object? sender, EventArgs e)
+        {
+            MarkIntroComplete();
+        }
+
+        private void MarkIntroComplete()
+        {
+            if (_animationCompleted)
+            {
+                return;
+            }
+
+            _animationCompleted = true;
+            SkipAnimationButton.Visibility = Visibility.Collapsed;
+            App.LogStartup("LoadingIntro: 角色展示完成，停在最终帧等待自检");
+            _introFinished.TrySetResult(true);
+        }
+
+        private void SkipAnimationButton_Click(object sender, RoutedEventArgs e)
+        {
+            TrySkipAnimation("鼠标");
+        }
+
+        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (_launcherUpdating)
+            {
+                return;
+            }
+
+            if (e.Key == Key.Space && SkipAnimationButton.Visibility == Visibility.Visible)
+            {
+                e.Handled = true;
+                TrySkipAnimation("Space");
+            }
+        }
+
+        private void TrySkipAnimation(string source)
+        {
+            if (_launcherUpdating || _animationCompleted || !_checksCompleted)
+            {
+                return;
+            }
+
+            App.LogStartup("LoadingIntro: 用户通过" + source + "跳过动画");
+            try
+            {
+                _introStoryboard?.Seek(this, LoadingAnimationDuration, TimeSeekOrigin.BeginTime);
+                _introStoryboard?.Pause(this);
+            }
+            catch (Exception ex)
+            {
+                App.LogStartup("LoadingIntro: 跳过动画定位失败 -> " + ex.Message);
+            }
+
+            MarkIntroComplete();
         }
 
         /// <summary>
@@ -175,7 +281,7 @@ namespace DNFLogin
             // 2.6) 登录器版本校验（仅外网版 · 远程模式）：
             //      向运维工具上报本机内置的版本号（LauncherVersion.Current），
             //      与运维工具内置的版本号**完全一致**才继续。
-            //      不符 → 弹强制更新窗口（下载 → 解压 → 删原登录器 → 自动打开新版本），
+            //      不符 → 在当前加载页内强制更新（下载 → 解压 → 替换 → 自动打开新版本），
             //      **更新完成前禁止进入登录界面**；拉不到版本信息也一律禁止进入（严格档）。
             //      放在这里而不是自检最后：一是失败要尽早告诉玩家（省得先看一堆防火墙/
             //      服务端弹窗），二是版本不对时后面那些检查没有意义。
@@ -186,7 +292,9 @@ namespace DNFLogin
             await Task.Delay(150).ConfigureAwait(true);
             try
             {
-                var gate = await Services.LauncherVersionGuard.RunSelfCheckAsync(this).ConfigureAwait(true);
+                var gate = await Services.LauncherVersionGuard
+                    .RunSelfCheckAsync(this, RunInlineLauncherUpdateAsync)
+                    .ConfigureAwait(true);
                 if (gate != Services.LauncherVersionGateResult.Pass)
                 {
                     // Blocked = 已弹窗说明原因，禁止进入；
@@ -300,8 +408,8 @@ namespace DNFLogin
             }
 
             // 7) 90CN.dll 完整性自检（仅 90 版本且已配置游戏目录）：
-            //    与登录器内嵌 90CN.dll 比对 SHA256，客户端缺失时询问安装、不一致时询问替换（不备份）；
-            //    用户取消或写入失败均记录到 StepDetail 后继续，不阻塞进入登录界面。
+            //    与登录器内嵌 90CN.dll 比对 SHA256；缺失或不一致时直接强制写入，
+            //    不再出现确认框。写入失败只记录日志，登录前复检仍会阻止带错误 DLL 启动。
             var profileId90 = AppConfig.CurrentProfile?.Id ?? "90";
             var is90Profile = !Services.ServerManager.IsS4Profile(profileId90);
             var gamePath90 = AppConfig.Settings.GamePath;
@@ -312,35 +420,19 @@ namespace DNFLogin
                 if (!string.IsNullOrEmpty(embeddedHash90))
                 {
                     var clientHash90 = Services.Cn90DllHelper.ClientSha256(clientRoot90);
-                    string? detail90 = null;
-                    if (string.IsNullOrEmpty(clientHash90))
+                    if (string.IsNullOrEmpty(clientHash90) ||
+                        !string.Equals(clientHash90, embeddedHash90, StringComparison.OrdinalIgnoreCase))
                     {
-                        var installDlg = new ConfirmDialog("安装 90CN.dll", "未检测到客户端 90CN.dll，是否安装？")
+                        ReportProgress("正在更新 90CN.dll", "正在写入登录器内置版本", 100, 93);
+                        var deployError90 = Services.Cn90DllHelper.DeployTo(clientRoot90);
+                        if (deployError90 is null)
                         {
-                            Owner = this
-                        };
-                        if (installDlg.ShowDialog() == true)
-                        {
-                            var installErr = Services.Cn90DllHelper.DeployTo(clientRoot90);
-                            detail90 = installErr is null ? "90CN.dll 已安装到客户端目录" : installErr;
+                            ReportProgress("90CN.dll 检查", "90CN.dll 已强制覆盖为登录器内置版本", 100, 93);
                         }
-                    }
-                    else if (!string.Equals(clientHash90, embeddedHash90, StringComparison.OrdinalIgnoreCase))
-                    {
-                        var replaceDlg = new ConfirmDialog("替换 90CN.dll", "90CN.dll 与登录器内置版本不一致，是否替换？")
+                        else
                         {
-                            Owner = this
-                        };
-                        if (replaceDlg.ShowDialog() == true)
-                        {
-                            var replaceErr = Services.Cn90DllHelper.DeployTo(clientRoot90);
-                            detail90 = replaceErr is null ? "90CN.dll 已替换为登录器内置版本" : replaceErr;
+                            App.LogStartup("RunDemoFlowAsync: 90CN.dll 自动覆盖失败 -> " + deployError90);
                         }
-                    }
-
-                    if (!string.IsNullOrEmpty(detail90))
-                    {
-                        ReportProgress("90CN.dll 检查", detail90, 100, 93);
                     }
                 }
             }
@@ -521,11 +613,24 @@ namespace DNFLogin
 #endif
 
             ReportProgress("自检完成", "即将进入登录界面", 100, 100);
-            await Task.Delay(400).ConfigureAwait(true);
-
             LastCheckResult = result;
-            App.LogStartup("RunDemoFlowAsync: 自检完成，准备打开 LoginWindow（MissingResources=" + result.MissingResources.Count + "）");
-            OpenLoginWindow();
+            _checksCompleted = true;
+            App.LogStartup("RunDemoFlowAsync: 自检完成（MissingResources=" + result.MissingResources.Count + "）");
+
+            if (!_animationCompleted)
+            {
+                // 自检先完成时，不打断 8 秒开场；让玩家可以跳过剩余动画。
+                SkipAnimationButton.Visibility = Visibility.Visible;
+                App.LogStartup("LoadingIntro: 自检已完成，显示跳过动画按钮");
+                await _introFinished.Task.ConfigureAwait(true);
+            }
+            else
+            {
+                // 动画已经停在最终帧并等待自检，给最终睁眼画面一个很短的停留。
+                await Task.Delay(180).ConfigureAwait(true);
+            }
+
+            await FadeOutAndOpenLoginWindowAsync().ConfigureAwait(true);
         }
 
         /// <summary>
@@ -548,22 +653,195 @@ namespace DNFLogin
 
         private void ReportProgress(string title, string detail, double stepPercent, double globalPercent)
         {
-            var clampedStep = Math.Clamp(stepPercent, 0, 100);
-            var clampedGlobal = Math.Clamp(globalPercent, 0, 100);
+            // 界面只展示总进度条；逐项标题与步骤进度仍保留在启动日志中。
+            _ = stepPercent;
+            App.LogStartup("StartupCheck: " + title + " - " + detail);
 
-            StepTitleText.Text = title;
-            StepDetailText.Text = detail;
-            StepProgressBar.Value = clampedStep;
-            StepPercentText.Text = $"{Math.Floor(clampedStep)}%";
-            TotalProgressBar.Value = clampedGlobal;
-            TotalPercentText.Text = $"{Math.Floor(clampedGlobal)}%";
+            var target = Math.Clamp(globalPercent, 0, 100);
+            if (target <= _progressTarget)
+            {
+                return;
+            }
+
+            _progressTarget = target;
+            SetProgressBar(target, target >= 100 ? 280 : 350);
         }
 
-        private void OpenLoginWindow()
+        private void SetProgressBar(double percent, int durationMilliseconds)
+        {
+            const double trackWidth = 760;
+            var targetWidth = trackWidth * Math.Clamp(percent, 0, 100) / 100.0;
+            var currentWidth = double.IsNaN(ProgressFill.Width) ? ProgressFill.ActualWidth : ProgressFill.Width;
+            if (durationMilliseconds <= 0)
+            {
+                ProgressFill.BeginAnimation(WidthProperty, null);
+                ProgressGlow.BeginAnimation(WidthProperty, null);
+                ProgressTip.BeginAnimation(MarginProperty, null);
+                ProgressFill.Width = targetWidth;
+                ProgressGlow.Width = targetWidth;
+                ProgressTip.Margin = new Thickness(Math.Max(0, targetWidth - 1), 0, 0, 0);
+                ProgressTip.Opacity = percent > 0.5 ? 0.95 : 0;
+                return;
+            }
+
+            var duration = TimeSpan.FromMilliseconds(durationMilliseconds);
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+
+            ProgressFill.BeginAnimation(
+                WidthProperty,
+                new DoubleAnimation(currentWidth, targetWidth, duration) { EasingFunction = ease });
+            ProgressGlow.BeginAnimation(
+                WidthProperty,
+                new DoubleAnimation(currentWidth, targetWidth, duration) { EasingFunction = ease });
+
+            var tipMargin = new Thickness(Math.Max(0, targetWidth - 1), 0, 0, 0);
+            ProgressTip.BeginAnimation(
+                MarginProperty,
+                new ThicknessAnimation(ProgressTip.Margin, tipMargin, duration) { EasingFunction = ease });
+            ProgressTip.Opacity = percent > 0.5 ? 0.95 : 0;
+        }
+
+        /// <summary>
+        /// 加载页内登录器强更。下载进度占进度条的 0~92%，解压与暂存占剩余区间；
+        /// 更新开始后禁用动画跳过，更新成功则由版本闸门退出本进程并自动重开新版本。
+        /// </summary>
+        private async Task<bool> RunInlineLauncherUpdateAsync(
+            Services.RemoteAuthService.LauncherVersionInfo info)
+        {
+            _launcherUpdating = true;
+            SkipAnimationButton.Visibility = Visibility.Collapsed;
+            UpdateStatusText.Visibility = Visibility.Visible;
+            UpdateStatusText.Text = $"发现新版本：{LauncherVersion.Current} → {info.RequiredVersion}，正在准备更新…";
+            SetProgressBar(0, 0);
+            App.LogStartup("LoadingIntro: 开始加载页内登录器更新 required=" + info.RequiredVersion +
+                           " url=" + info.DownloadUrl);
+
+            try
+            {
+                var progress = new Progress<Services.LauncherUpdateProgress>(OnInlineLauncherUpdateProgress);
+                var (plan, error) = await Services.LauncherSelfUpdater
+                    .DownloadAndStageAsync(info.DownloadUrl, progress, CancellationToken.None)
+                    .ConfigureAwait(true);
+
+                if (plan is null)
+                {
+                    return ShowInlineLauncherUpdateFailure(error);
+                }
+
+                UpdateStatusText.Text = "更新包已就绪，正在应用并重新打开登录器…";
+                SetProgressBar(100, 260);
+                var (ok, applyError) = Services.LauncherSelfUpdater.ApplyAndRestart(plan);
+                if (!ok)
+                {
+                    return ShowInlineLauncherUpdateFailure(applyError);
+                }
+
+                // 给 UI 一个短暂时间显示完成状态；替换脚本已经开始等待本进程退出。
+                await Task.Delay(450).ConfigureAwait(true);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                return ShowInlineLauncherUpdateFailure("更新失败：" + ex.Message);
+            }
+        }
+
+        private void OnInlineLauncherUpdateProgress(Services.LauncherUpdateProgress progress)
+        {
+            if (!_launcherUpdating)
+            {
+                return;
+            }
+
+            var barPercent = progress.Stage switch
+            {
+                Services.LauncherUpdateStage.Downloading => progress.Percent * 0.92,
+                Services.LauncherUpdateStage.Extracting => 96,
+                Services.LauncherUpdateStage.Staging => 99,
+                _ => 0,
+            };
+            SetProgressBar(barPercent, 180);
+
+            if (progress.Stage == Services.LauncherUpdateStage.Downloading && progress.Total > 0)
+            {
+                var doneMb = progress.Done / 1024.0 / 1024.0;
+                var totalMb = progress.Total / 1024.0 / 1024.0;
+                UpdateStatusText.Text =
+                    $"{progress.Message}  {progress.Percent}% · {doneMb:0.0} / {totalMb:0.0} MB · {progress.SpeedMBps:0.0} MB/s";
+            }
+            else if (progress.Stage == Services.LauncherUpdateStage.Downloading && progress.Done > 0)
+            {
+                var doneMb = progress.Done / 1024.0 / 1024.0;
+                UpdateStatusText.Text = $"{progress.Message}  {doneMb:0.0} MB · {progress.SpeedMBps:0.0} MB/s";
+            }
+            else
+            {
+                UpdateStatusText.Text = progress.Message;
+            }
+        }
+
+        private bool ShowInlineLauncherUpdateFailure(string message)
+        {
+            var readable = string.IsNullOrWhiteSpace(message) ? "登录器更新失败，请稍后重试。" : message;
+            UpdateStatusText.Text = readable;
+            App.LogStartup("LoadingIntro: 登录器更新失败 -> " + readable);
+            MessageBox.Show(
+                readable + "\n\n登录器无法继续进入主界面。请重新打开登录器后再试；若持续失败，请联系管理员。",
+                "登录器更新失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return false;
+        }
+
+        private async Task FadeOutAndOpenLoginWindowAsync()
+        {
+            _launcherUpdating = false;
+            SkipAnimationButton.Visibility = Visibility.Collapsed;
+            UpdateStatusText.Visibility = Visibility.Collapsed;
+
+            // Do not make the loader transparent before the login window has rendered.
+            // Showing the opaque login window first avoids the desktop/white frame that
+            // used to flash between the two transparent layered windows.
+            Topmost = true;
+            var loginWindow = OpenLoginWindow();
+            if (loginWindow is not null)
+            {
+                await loginWindow.WaitForContentReadyAsync().ConfigureAwait(true);
+                await Task.Delay(180).ConfigureAwait(true);
+
+                // Fade the loader's own solid transition overlay to the same dark
+                // colour as the login window's base. This stays inside one rendered
+                // WPF surface and avoids layered-window white flashes.
+                TransitionOverlay.BeginAnimation(UIElement.OpacityProperty, null);
+                TransitionOverlay.Opacity = 0;
+                var fadeDone = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                var fade = new DoubleAnimation
+                {
+                    From = 0,
+                    To = 1,
+                    Duration = TimeSpan.FromMilliseconds(600),
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut },
+                    FillBehavior = FillBehavior.HoldEnd
+                };
+                fade.Completed += (_, _) => fadeDone.TrySetResult(true);
+                App.LogStartup("OpenLoginWindow: 加载页面开始淡出");
+                TransitionOverlay.BeginAnimation(UIElement.OpacityProperty, fade);
+                await Task.WhenAny(fadeDone.Task, Task.Delay(750)).ConfigureAwait(true);
+                App.LogStartup("OpenLoginWindow: 加载页面淡出完成");
+
+                Topmost = false;
+                loginWindow.BeginRevealAfterLoader();
+                loginWindow.Activate();
+            }
+
+            Close();
+            App.LogStartup("OpenLoginWindow: 登录窗口已绘制，旧加载窗口关闭");
+        }
+
+        private LoginWindow? OpenLoginWindow()
         {
             if (_loginWindowOpened)
             {
-                return;
+                return null;
             }
 
             _loginWindowOpened = true;
@@ -579,15 +857,13 @@ namespace DNFLogin
                 Application.Current.MainWindow = loginWindow;
                 loginWindow.Show();
                 App.LogStartup("OpenLoginWindow: LoginWindow.Show() 已调用");
+                return loginWindow;
             }
             catch (Exception ex)
             {
                 App.LogStartup("OpenLoginWindow: 创建/显示异常 -> " + ex);
                 throw;
             }
-
-            Close();
-            App.LogStartup("OpenLoginWindow: 旧 MainWindow 已关闭");
         }
     }
 }

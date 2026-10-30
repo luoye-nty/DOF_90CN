@@ -56,6 +56,8 @@ namespace DNFLogin
         private DispatcherTimer? _bgTimer;
         private int _bgIndex;
         private bool _hasShown;
+        private readonly TaskCompletionSource<bool> _contentReady =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
         private bool _isLoggingIn;
         private bool _rescuePromptShown;                    // 主框登录后老号无救援代码是否已弹补设引导（防重复/双开各弹一次）
         private bool _isSecondaryLoggingIn;
@@ -401,6 +403,7 @@ namespace DNFLogin
             StartPvfAutoUpdate();
 #endif
             App.LogStartup("LoginWindow: Window_Loaded 处理完成");
+            RevealWhenReady();
         }
 
         protected override void OnSourceInitialized(EventArgs e)
@@ -451,15 +454,49 @@ namespace DNFLogin
         {
             base.OnContentRendered(e);
             App.LogStartup("LoginWindow: OnContentRendered 触发（_hasShown=" + _hasShown + "）");
+            RevealWhenReady();
+        }
 
+        private void RevealWhenReady()
+        {
             if (_hasShown)
             {
                 return;
             }
 
             _hasShown = true;
+            CenterOnScreen();
             FadeInWindow();
-            App.LogStartup("LoginWindow: FadeIn 淡入已启动");
+            _contentReady.TrySetResult(true);
+            App.LogStartup("LoginWindow: 首次呈现完成，已通知加载窗口");
+        }
+
+        /// <summary>等待登录窗口完成第一次真实布局与绘制，供加载窗口做无缝切换。</summary>
+        public Task WaitForContentReadyAsync() => _contentReady.Task;
+
+        /// <summary>加载窗口关闭前重置内容，让登录界面从深色背景中平滑显现。</summary>
+        public void BeginRevealAfterLoader()
+        {
+            RootContainer.BeginAnimation(UIElement.OpacityProperty, null);
+            RootContainer.Opacity = 0;
+            var fade = new DoubleAnimation
+            {
+                From = 0,
+                To = 1,
+                Duration = TimeSpan.FromMilliseconds(600),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut },
+                FillBehavior = FillBehavior.HoldEnd
+            };
+            RootContainer.BeginAnimation(UIElement.OpacityProperty, fade);
+            App.LogStartup("LoginWindow: 开始从深色背景淡入主界面");
+        }
+
+        private void CenterOnScreen()
+        {
+            var workArea = SystemParameters.WorkArea;
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            Left = workArea.Left + Math.Max(0, (workArea.Width - ActualWidth) / 2);
+            Top = workArea.Top + Math.Max(0, (workArea.Height - ActualHeight) / 2);
         }
 
         protected override void OnClosing(CancelEventArgs e)
@@ -3296,50 +3333,22 @@ namespace DNFLogin
             var isRemote = AppConfig.Mode == LoginMode.Remote;
 
             // 90CN.dll 启动前复检（仅 90 版本且 GamePath 已配置）：
-            //    与登录器内嵌 90CN.dll 比对 SHA256，缺失询问安装、不一致询问替换（不备份）；
-            //    用户取消或写入失败则中止本次启动并提示，不抛异常。
+            //    与登录器内嵌 90CN.dll 比对 SHA256，缺失或不一致时直接强制覆盖（不备份）；
+            //    只有写入失败才中止本次启动并提示，不抛异常。
             if (is90)
             {
                 var embeddedHash = Services.Cn90DllHelper.EmbeddedSha256();
                 if (!string.IsNullOrEmpty(embeddedHash))
                 {
                     var clientHash = Services.Cn90DllHelper.ClientSha256(directory);
-                    var needDeploy = false;
-                    if (string.IsNullOrEmpty(clientHash))
-                    {
-                        var installDlg = new ConfirmDialog("安装 90CN.dll", "未检测到客户端 90CN.dll，是否安装？")
-                        {
-                            Owner = this
-                        };
-                        if (installDlg.ShowDialog() != true)
-                        {
-                            MessageBox.Show("请先处理 90CN.dll 后再启动", "无法启动", MessageBoxButton.OK, MessageBoxImage.Warning);
-                            return null;
-                        }
-
-                        needDeploy = true;
-                    }
-                    else if (!string.Equals(clientHash, embeddedHash, StringComparison.OrdinalIgnoreCase))
-                    {
-                        var replaceDlg = new ConfirmDialog("替换 90CN.dll", "90CN.dll 与登录器内置版本不一致，是否替换？")
-                        {
-                            Owner = this
-                        };
-                        if (replaceDlg.ShowDialog() != true)
-                        {
-                            MessageBox.Show("请先处理 90CN.dll 后再启动", "无法启动", MessageBoxButton.OK, MessageBoxImage.Warning);
-                            return null;
-                        }
-
-                        needDeploy = true;
-                    }
-
-                    if (needDeploy)
+                    if (string.IsNullOrEmpty(clientHash) ||
+                        !string.Equals(clientHash, embeddedHash, StringComparison.OrdinalIgnoreCase))
                     {
                         var deployErr = Services.Cn90DllHelper.DeployTo(directory);
                         if (deployErr is not null)
                         {
-                            MessageBox.Show(deployErr + "\n\n请先关闭游戏后重试。", "无法启动", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            MessageBox.Show(deployErr + "\n\n请先关闭占用 90CN.dll 的程序后重试。",
+                                "无法启动", MessageBoxButton.OK, MessageBoxImage.Warning);
                             ShowStatus("90CN.dll 写入失败，已中止本次启动", Brushes.OrangeRed);
                             return null;
                         }
@@ -4302,7 +4311,7 @@ namespace DNFLogin
 
         private void FadeInWindow()
         {
-            if (Opacity >= 1)
+            if (RootContainer.Opacity >= 1)
             {
                 return;
             }
@@ -4314,7 +4323,7 @@ namespace DNFLogin
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
             };
 
-            BeginAnimation(OpacityProperty, animation);
+            RootContainer.BeginAnimation(UIElement.OpacityProperty, animation);
         }
 
         private static BitmapImage LoadImage(Uri uri)

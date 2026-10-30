@@ -132,6 +132,9 @@
     <Resource Include="Assets\RotatingBackground6.png" />
     <Resource Include="Assets\icon-message-error.png" />
     <Resource Include="Assets\icon-message-success.png" />
+    <Resource Include="Assets\loading-background.jpg" />
+    <Resource Include="Assets\loading-seria-outline.png" />
+    <Resource Include="Assets\loading-seria-open.png" />
     <!-- GM 工具加载转圈图标：编译为嵌入资源，单文件发布后依然可用 -->
     <Resource Include="Assets\icon-loading.png" />
     <!-- 版本切换加载转圈图标 -->
