@@ -1,0 +1,5 @@
+# Build outputs are generated locally and must not be committed.
+**/build/
+**/bin/
+**/obj/
+**/_build/
