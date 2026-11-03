@@ -1,0 +1,4 @@
+bin/
+obj/
+build/
+DNF90.DownloaderBuilder/RuntimeAssets/*.exe

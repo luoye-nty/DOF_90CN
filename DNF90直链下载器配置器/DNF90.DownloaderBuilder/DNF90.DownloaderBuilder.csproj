@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows7.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>DNF90.DownloaderBuilder</RootNamespace>
+    <AssemblyName>DNF直链下载器配置器</AssemblyName>
+    <ApplicationIcon>..\..\登录器\Assets\DNF.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DNF90.Downloader.Shared\DNF90.Downloader.Shared.csproj" />
+    <Resource Include="..\..\登录器\Assets\DNF.ico" Link="Assets\DNF.ico" />
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="RuntimeAssets\*.exe">
+      <LogicalName>DNF90.DownloaderBuilder.Runtime.Downloader.exe</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+</Project>
