@@ -20,8 +20,8 @@ import (
 
 func TestCurrentDungeonAllRoomsClearedRequiresEveryTopologyCoordinate(t *testing.T) {
 	rooms := []worldmap.DungeonRoom{
-		{Coordinate: worldmap.RoomCoordinate{X: 0, Y: 0}},
-		{Coordinate: worldmap.RoomCoordinate{X: 1, Y: 0}},
+		{Coordinate: worldmap.RoomCoordinate{X: 0, Y: 0}, Map: &worldmap.ResolvedMap{Map: worldmap.Map{ID: 1}}},
+		{Coordinate: worldmap.RoomCoordinate{X: 1, Y: 0}, Map: &worldmap.ResolvedMap{Map: worldmap.Map{ID: 2}}},
 	}
 	if currentDungeonAllRoomsCleared(nil, nil) {
 		t.Fatal("empty topology must not count as all rooms cleared")
@@ -31,6 +31,25 @@ func TestCurrentDungeonAllRoomsClearedRequiresEveryTopologyCoordinate(t *testing
 	}
 	if !currentDungeonAllRoomsCleared(rooms, []worldmap.RoomCoordinate{{X: 1, Y: 0}, {X: 0, Y: 0}}) {
 		t.Fatal("complete cleared set must count as all rooms cleared")
+	}
+}
+
+func TestCurrentDungeonAllRoomsClearedIgnoresUnresolvedGreedCells(t *testing.T) {
+	rooms := []worldmap.DungeonRoom{
+		{Coordinate: worldmap.RoomCoordinate{X: 3, Y: 3}, Map: &worldmap.ResolvedMap{Map: worldmap.Map{ID: 70540}}},
+		{Coordinate: worldmap.RoomCoordinate{X: 2, Y: 3}, Map: &worldmap.ResolvedMap{Map: worldmap.Map{ID: 70541}}},
+		{Coordinate: worldmap.RoomCoordinate{X: 0, Y: 1}, ResolutionError: "dnf dungeon map is unresolved"},
+		{Coordinate: worldmap.RoomCoordinate{X: 1, Y: 1}, ResolutionError: "dnf dungeon map is unresolved"},
+	}
+	cleared := []worldmap.RoomCoordinate{{X: 3, Y: 3}, {X: 2, Y: 3}}
+	if !currentDungeonAllRoomsCleared(rooms, cleared) {
+		t.Fatal("unresolved greed-only cells must not block all-maps completion")
+	}
+	if currentDungeonAllRoomsCleared(rooms, []worldmap.RoomCoordinate{{X: 3, Y: 3}}) {
+		t.Fatal("partial playable-room clear set must not count as complete")
+	}
+	if currentDungeonAllRoomsCleared(rooms[2:], nil) {
+		t.Fatal("topology with only unresolved cells must not count as complete")
 	}
 }
 

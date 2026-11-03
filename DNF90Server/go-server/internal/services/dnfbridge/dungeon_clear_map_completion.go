@@ -251,12 +251,22 @@ func currentDungeonAllRoomsCleared(rooms []worldmap.DungeonRoom, cleared []world
 	for _, coordinate := range cleared {
 		clearedSet[coordinate] = struct{}{}
 	}
+	requiredRooms := 0
 	for _, room := range rooms {
+		// A dungeon [greed] can contain topological filler cells that have no
+		// MAP resource and therefore cannot be entered by the client. They are
+		// not rooms for an all-maps quest; count only rooms that can actually
+		// be loaded and cleared. This matters for Kings Library maze 2, whose
+		// 9 authored maps are joined by 2 unresolved greed-only cells.
+		if room.Map == nil {
+			continue
+		}
+		requiredRooms++
 		if _, ok := clearedSet[room.Coordinate]; !ok {
 			return false
 		}
 	}
-	return true
+	return requiredRooms > 0
 }
 
 func ensureCurrentDungeonCompletionReceiptKey(
