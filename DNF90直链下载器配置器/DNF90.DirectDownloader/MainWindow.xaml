@@ -33,10 +33,6 @@
                                    FontSize="27"
                                    FontWeight="Bold"
                                    Foreground="#DDF7FF" />
-                        <TextBlock Text="自动按顺序下载配置的直链文件"
-                                   Margin="0,5,0,0"
-                                   Foreground="#7ECDEB"
-                                   FontSize="12" />
                     </StackPanel>
                     <TextBlock Text="DIRECT DOWNLOADER"
                                HorizontalAlignment="Right"
@@ -66,25 +62,6 @@
                                Margin="0,7,0,0"
                                Foreground="#668FA2"
                                FontSize="11" />
-
-                    <Border Margin="0,18,0,0"
-                            Padding="12"
-                            Background="#08131E"
-                            BorderBrush="#244354"
-                            BorderThickness="1"
-                            CornerRadius="5">
-                        <StackPanel>
-                            <TextBlock x:Name="UrlSummaryText"
-                                       Text="正在读取下载地址…"
-                                       Foreground="#D7F4FF"
-                                       FontSize="12" />
-                            <TextBlock Text="多个地址会按配置顺序依次下载；已有同名文件时会自动生成新文件名。压缩包不会自动解压。"
-                                       Margin="0,6,0,0"
-                                       Foreground="#668FA2"
-                                       FontSize="11"
-                                       TextWrapping="Wrap" />
-                        </StackPanel>
-                    </Border>
 
                     <CheckBox x:Name="OpenInstallerCheckBox"
                               Content="下载完打开安装"

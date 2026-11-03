@@ -17,7 +17,6 @@ public partial class MainWindow : Window
         _config = config;
         Title = config.DownloaderName;
         DownloaderNameText.Text = config.DownloaderName;
-        UrlSummaryText.Text = $"已配置 {config.DownloadUrls.Count} 个下载地址";
         DownloadPathTextBox.Text = DownloaderPathHelper.DefaultDownloadDirectory(
             config.DefaultDisk,
             config.DefaultDownloadFolderName);
