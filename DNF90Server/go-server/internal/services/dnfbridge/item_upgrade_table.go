@@ -37,6 +37,12 @@ type currentUpgradeTableRow struct {
 	PenaltyValue   int
 	MaterialItemID int
 	MaterialCount  int
+	// StatCoefficients are the six client stat columns from [table type].
+	// Current PVF rows split the same gameplay coefficients into a short and a
+	// full half; the displayed coefficient is their sum. Keeping them on the
+	// parsed row lets the inheritance property view use the same values as the
+	// client instead of maintaining a second hand-written level curve.
+	StatCoefficients [6]float64
 }
 
 func (r currentUpgradeTableRow) SuccessWeight() int {
@@ -50,6 +56,7 @@ func (r currentUpgradeTableRow) SuccessWeight() int {
 // currentUpgradeTable is the parsed PVF upgrade/amplify configuration.
 type currentUpgradeTable struct {
 	Rows                []currentUpgradeTableRow
+	AmplificationConsts []float64
 	NoticeLevel         int
 	Costs               []int
 	CostWeightsByRarity []float64
@@ -215,18 +222,29 @@ func parseCurrentUpgradeTable(doc *dnfpvf.Document, rawText string) *currentUpgr
 			break
 		}
 		tail := values[len(values)-currentUpgradeTableTailWidth:]
+		var statCoefficients [6]float64
+		for index := range statCoefficients {
+			if index < len(values) {
+				statCoefficients[index] = values[index]
+			}
+			if len(values) >= currentUpgradeTableFullRowWidth &&
+				index+8 < len(values)-currentUpgradeTableTailWidth {
+				statCoefficients[index] += values[index+8]
+			}
+		}
 		// values[1] is intentionally not read here. It was charged as the gold
 		// coefficient until 2026-09-25 and is not one: the 增幅器 popup quoted
 		// 220500 while the server took 992250, because values[1] (0.18) * 25 was
 		// multiplied onto a price the client never scaled. Gold now comes from
 		// [cost weight by upgrade level] only.
 		table.Rows = append(table.Rows, currentUpgradeTableRow{
-			TargetLevel:    len(table.Rows) + 1,
-			FailureWeight:  int(math.Round(tail[0])),
-			PenaltyType:    int(math.Round(tail[2])),
-			PenaltyValue:   int(math.Round(tail[3])),
-			MaterialItemID: int(math.Round(tail[6])),
-			MaterialCount:  int(math.Round(tail[7])),
+			TargetLevel:      len(table.Rows) + 1,
+			FailureWeight:    int(math.Round(tail[0])),
+			PenaltyType:      int(math.Round(tail[2])),
+			PenaltyValue:     int(math.Round(tail[3])),
+			MaterialItemID:   int(math.Round(tail[6])),
+			MaterialCount:    int(math.Round(tail[7])),
+			StatCoefficients: statCoefficients,
 		})
 		offset = next
 	}
@@ -234,6 +252,7 @@ func parseCurrentUpgradeTable(doc *dnfpvf.Document, rawText string) *currentUpgr
 	if values := doc.Ints("notice"); len(values) > 0 {
 		table.NoticeLevel = int(values[0])
 	}
+	table.AmplificationConsts = parseCurrentUpgradeAmplificationConsts(rawText)
 	// [cost]
 	for _, v := range doc.Ints("cost") {
 		table.Costs = append(table.Costs, int(v))
@@ -249,6 +268,20 @@ func parseCurrentUpgradeTable(doc *dnfpvf.Document, rawText string) *currentUpgr
 	// [disjoint] section
 	parseCurrentUpgradeDisjoint(rawText, table)
 	return table
+}
+
+func parseCurrentUpgradeAmplificationConsts(rawText string) []float64 {
+	values := extractCurrentUpgradeTableTokens(rawText, "amplification const")
+	if len(values) < 4 {
+		return nil
+	}
+	// The live section stores four identical columns per upgrade row. The
+	// first column is the value used by ItemAmplifier.GetUpgradeAttributeBonus.
+	result := make([]float64, 0, len(values)/4)
+	for index := 0; index+3 < len(values); index += 4 {
+		result = append(result, values[index])
+	}
+	return result
 }
 
 // parseCurrentUpgradeCostWeightByUpgradeLevel folds [cost weight by upgrade

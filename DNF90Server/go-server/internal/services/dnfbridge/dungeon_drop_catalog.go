@@ -68,15 +68,23 @@ type dungeonDropItemDefinition struct {
 	Rarity             int64
 	MinimumLevel       int64
 	MaximumLevel       int64
-	CreationRate       int64
-	StackableType      string
-	EquipmentEffectID  uint16
-	StackLimit         int64
-	SlotStart          int16
-	SlotEnd            int16
-	Durability         uint16
-	ExpirationDate     time.Time
-	UsablePeriodDays   int64
+	// Reinforcement display depends on the equipment's actual base combat
+	// values. Keep the PVF ranges instead of treating every item at the same
+	// level as having an identical rolled base stat.
+	EquipmentPhysicalAttack  []int64
+	EquipmentMagicalAttack   []int64
+	EquipmentPhysicalDefense []int64
+	EquipmentMagicalDefense  []int64
+	AntiEvil                 int64
+	CreationRate             int64
+	StackableType            string
+	EquipmentEffectID        uint16
+	StackLimit               int64
+	SlotStart                int16
+	SlotEnd                  int16
+	Durability               uint16
+	ExpirationDate           time.Time
+	UsablePeriodDays         int64
 	// DailyDeleteItem 是 PVF 的 `[daily delete item] 1`：该物品在每日重置时删除。
 	// 与 ExpirationDate / UsablePeriodDays 无关，见 daily_delete_item.go。
 	DailyDeleteItem bool
@@ -496,6 +504,15 @@ func (c *pvfDungeonDropCatalog) ResolveItem(itemID uint32) (dungeonDropItemDefin
 		definition.CustomAbilityType, _ = document.Text("custom ability type")
 		definition.CustomAbilityCount, _ = document.Int("custom ability count")
 		definition.Grade, _ = document.Int("grade")
+		definition.EquipmentPhysicalAttack = append(
+			[]int64(nil), document.Ints("equipment physical attack")...)
+		definition.EquipmentMagicalAttack = append(
+			[]int64(nil), document.Ints("equipment magical attack")...)
+		definition.EquipmentPhysicalDefense = append(
+			[]int64(nil), document.Ints("equipment physical defense")...)
+		definition.EquipmentMagicalDefense = append(
+			[]int64(nil), document.Ints("equipment magical defense")...)
+		definition.AntiEvil, _ = document.Int("anti evil")
 		_, definition.HasGrowthType = document.Section("growth type")
 		_, definition.PeriodEquipment = document.Section("period equipment")
 		for _, name := range []string{"durability", "maximum durability", "max durability"} {
