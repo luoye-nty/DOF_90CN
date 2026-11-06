@@ -117,6 +117,9 @@ type Command struct {
 	ChronicleTicketID     int64
 	ChronicleTargetID     int64
 	ChronicleMaterialID   int64
+	// DirectExperienceAdventureGrowthPlanner credits the pre-level-cap part of
+	// an experience consumable into the account adventure-group growth ledger.
+	DirectExperienceAdventureGrowthPlanner alignedcmd.DirectExperienceAdventureGrowthPlanner
 }
 
 func NewChronicleGrowthCommand(req alignedcmd.Request, parsed ChronicleGrowthRequest) Command {
@@ -228,6 +231,7 @@ func NewUseStackableCommand(req alignedcmd.Request, parsed UseStackableRequest) 
 	cmd.SourceInstanceValue = parsed.InstanceValue
 	cmd.ItemTemplateID = parsed.ItemCode
 	cmd.ReservedValue = parsed.Reserved
+	cmd.DirectExperienceAdventureGrowthPlanner = req.DirectExperienceAdventureGrowthPlanner
 	return cmd
 }
 
@@ -248,6 +252,7 @@ func NewIncreaseStatusCommand(req alignedcmd.Request, parsed IncreaseStatusReque
 	cmd := baseCommand(req, "increase_status_book", "inventory + character + skill atomic owner + current-PVF SP/TP or experience book")
 	cmd.SourceListType = listTypeMain
 	cmd.SourceSlotIndex = parsed.SlotIndex
+	cmd.DirectExperienceAdventureGrowthPlanner = req.DirectExperienceAdventureGrowthPlanner
 	return cmd
 }
 

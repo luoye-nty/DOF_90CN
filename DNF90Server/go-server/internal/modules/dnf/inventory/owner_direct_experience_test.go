@@ -38,11 +38,26 @@ func TestOwnerDirectExperienceConsumableCommitsProgressionAndSourceAtomically(t 
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := repositories.Account.Save(ctx, dnfrepo.AccountRecord{
+		AccountID: "acc",
+		Metadata:  map[string]string{"adventure_group_growth_v1": `{"level":1,"experience":0,"remainder":0}`},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	owner, err := NewOwner(repositories)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := NewUseStackableCommand(alignedcmd.Request{AccountID: "acc", SelectedCharacterID: 77}, UseStackableRequest{
+	var credited uint32
+	cmd := NewUseStackableCommand(alignedcmd.Request{
+		AccountID:           "acc",
+		SelectedCharacterID: 77,
+		DirectExperienceAdventureGrowthPlanner: func(account *dnfrepo.AccountRecord, preCapExperience uint32, _ time.Time) error {
+			credited = preCapExperience
+			account.Metadata["adventure_group_growth_v1"] = `{"level":1,"experience":100000,"remainder":0}`
+			return nil
+		},
+	}, UseStackableRequest{
 		SlotIndex: 10, ListType: listTypeMain, InstanceValue: 1234, ItemCode: 690001552,
 	})
 	resolver := func(itemID int64) (alignedcmd.StackableUseResolution, error) {
@@ -66,22 +81,27 @@ func TestOwnerDirectExperienceConsumableCommitsProgressionAndSourceAtomically(t 
 		return alignedcmd.DirectExperienceConsumablePlan{
 			Character: nextCharacter, Skill: nextSkill,
 			CharacterFields: []dnfrepo.CharacterField{dnfrepo.CharacterFieldStats},
-			Gain:            1000, PreviousLevel: 20, NewLevel: 20, PreviousExperience: 500000, NewExperience: 501000,
+			Gain:            1000, AdventureExperience: 1000,
+			PreviousLevel: 20, NewLevel: 20, PreviousExperience: 500000, NewExperience: 501000,
 		}, nil
 	}
 	result, err := owner.UseStackableWithAllResolvers(ctx, cmd, nil, nil, resolver, nil, planner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.DirectExperienceApplied || result.DirectExperienceGain != 1000 ||
+	if !result.DirectExperienceApplied || result.DirectExperienceGain != 1000 || result.DirectExperienceAdventureGain != 1000 ||
 		result.DirectExperiencePreviousTotal != 500000 || result.DirectExperienceNewTotal != 501000 ||
-		result.RemainingCount != 1 {
+		result.RemainingCount != 1 || credited != 1000 {
 		t.Fatalf("result=%+v", result)
 	}
 	character, _, _ := repositories.Character.Load(ctx, "77")
 	inventory, _, _ := repositories.Inventory.Load(ctx, "77")
+	account, _, _ := repositories.Account.Load(ctx, "acc")
 	if character.Stats["exp"] != 501000 || inventory.Slots["0:10"].Count != 1 {
 		t.Fatalf("character=%+v inventory=%+v", character, inventory)
+	}
+	if account.Metadata["adventure_group_growth_v1"] != `{"level":1,"experience":100000,"remainder":0}` {
+		t.Fatalf("account=%+v", account)
 	}
 
 	wire := ownerAppliedUseStackableResult(44, cmd, result)
@@ -129,5 +149,67 @@ func TestOwnerDirectExperienceConsumablePlannerFailureConsumesNothing(t *testing
 	inventory, _, _ := repositories.Inventory.Load(ctx, "77")
 	if character.Stats["exp"] != 500000 || inventory.Slots["0:10"].Count != 1 {
 		t.Fatalf("rollback failed character=%+v inventory=%+v", character, inventory)
+	}
+}
+
+func TestOwnerDirectExperienceAdventureFailureRollsBackCharacterAndSource(t *testing.T) {
+	ctx := context.Background()
+	repositories := dnfrepomemory.NewMemoryGroup()
+	_ = repositories.Character.Save(ctx, dnfrepo.CharacterRecord{
+		CharacterID: "77", AccountID: "acc", Job: "2", Level: 20, Stats: map[string]int64{"exp": 500000},
+	})
+	_ = repositories.Skill.Save(ctx, dnfrepo.SkillRecord{
+		CharacterID: "77", Points: dnfrepo.SkillPointState{SyncedLevel: 20},
+	})
+	_ = repositories.Inventory.Save(ctx, dnfrepo.InventoryRecord{CharacterID: "77", Slots: map[string]dnfrepo.ItemStack{
+		"0:10": {ItemID: 690001552, Count: 1, Extra: map[string]string{
+			"item_kind": "stackable", "pvf_path": "stackable/event/tau_book.stk", "stackable_type": "[etc]",
+		}},
+	}})
+	_ = repositories.Account.Save(ctx, dnfrepo.AccountRecord{
+		AccountID: "acc",
+		Metadata:  map[string]string{"adventure_group_growth_v1": `{"level":1,"experience":0,"remainder":0}`},
+	})
+	owner, _ := NewOwner(repositories)
+	wantErr := errors.New("adventure growth unavailable")
+	cmd := NewUseStackableCommand(alignedcmd.Request{
+		AccountID:           "acc",
+		SelectedCharacterID: 77,
+		DirectExperienceAdventureGrowthPlanner: func(*dnfrepo.AccountRecord, uint32, time.Time) error {
+			return wantErr
+		},
+	}, UseStackableRequest{
+		SlotIndex: 10, ListType: listTypeMain, InstanceValue: 1234, ItemCode: 690001552,
+	})
+	resolver := func(itemID int64) (alignedcmd.StackableUseResolution, error) {
+		return alignedcmd.StackableUseResolution{
+			ItemID: itemID, PVFPath: "stackable/event/tau_book.stk", StackableType: "[etc]",
+			DirectExperience: &alignedcmd.DirectExperienceConsumableResolution{
+				ItemID: itemID, PVFPath: "stackable/event/tau_book.stk", EffectType: "[expup]", EffectValues: []int64{1000},
+			},
+		}, nil
+	}
+	planner := func(character dnfrepo.CharacterRecord, skill dnfrepo.SkillRecord, _ alignedcmd.DirectExperienceConsumableResolution, updatedAt time.Time) (alignedcmd.DirectExperienceConsumablePlan, error) {
+		nextCharacter := dnfrepo.CloneCharacter(character)
+		nextCharacter.Stats["exp"] = 501000
+		nextCharacter.UpdatedAt = updatedAt
+		nextSkill := dnfrepo.CloneSkill(skill)
+		nextSkill.UpdatedAt = updatedAt
+		return alignedcmd.DirectExperienceConsumablePlan{
+			Character: nextCharacter, Skill: nextSkill,
+			CharacterFields: []dnfrepo.CharacterField{dnfrepo.CharacterFieldStats},
+			Gain:            1000, AdventureExperience: 1000,
+			PreviousLevel: 20, NewLevel: 20, PreviousExperience: 500000, NewExperience: 501000,
+		}, nil
+	}
+	if _, err := owner.UseStackableWithAllResolvers(ctx, cmd, nil, nil, resolver, nil, planner); !errors.Is(err, wantErr) {
+		t.Fatalf("error=%v want=%v", err, wantErr)
+	}
+	character, _, _ := repositories.Character.Load(ctx, "77")
+	inventory, _, _ := repositories.Inventory.Load(ctx, "77")
+	account, _, _ := repositories.Account.Load(ctx, "acc")
+	if character.Stats["exp"] != 500000 || inventory.Slots["0:10"].Count != 1 ||
+		account.Metadata["adventure_group_growth_v1"] != `{"level":1,"experience":0,"remainder":0}` {
+		t.Fatalf("rollback failed character=%+v inventory=%+v account=%+v", character, inventory, account)
 	}
 }

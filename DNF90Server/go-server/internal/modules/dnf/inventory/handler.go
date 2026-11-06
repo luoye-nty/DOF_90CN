@@ -2350,11 +2350,12 @@ func ownerAppliedUseStackableResult(opcode uint16, cmd Command, result UseStacka
 	if result.DirectExperienceApplied {
 		postActions = append(postActions, alignedcmd.PostActionRefreshSelectedCharacterProgression)
 		reason = fmt.Sprintf(
-			"inventory/progression settlement owner applied: %s direct-experience item=%d remaining=%d gain=%d level=%d->%d total=%d->%d sp_gain=%d tp_gain=%d; atomic source decrement + character EXP/level + SP/TP ledger, then op44 ACK/source op14/native skill refresh",
+			"inventory/progression settlement owner applied: %s direct-experience item=%d remaining=%d gain=%d adventure_gain=%d level=%d->%d total=%d->%d sp_gain=%d tp_gain=%d; atomic source decrement + character EXP/level + SP/TP + account adventure-growth ledger, then op44 ACK/source op14/native skill refresh",
 			cmd.String(),
 			result.ItemID,
 			result.RemainingCount,
 			result.DirectExperienceGain,
+			result.DirectExperienceAdventureGain,
 			result.DirectExperiencePreviousLevel,
 			result.DirectExperienceNewLevel,
 			result.DirectExperiencePreviousTotal,

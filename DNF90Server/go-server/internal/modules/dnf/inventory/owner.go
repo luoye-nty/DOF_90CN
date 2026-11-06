@@ -464,6 +464,7 @@ type UseStackableResult struct {
 	ExperienceBonusRemainingSeconds   int64
 	DirectExperienceApplied           bool
 	DirectExperienceGain              uint32
+	DirectExperienceAdventureGain     uint32
 	DirectExperiencePreviousLevel     int
 	DirectExperienceNewLevel          int
 	DirectExperiencePreviousTotal     uint32
@@ -4476,8 +4477,32 @@ func (o *Owner) useDirectExperienceConsumable(
 		if plan.Gain == 0 || plan.Character.CharacterID != characterID || plan.Skill.CharacterID != characterID ||
 			len(plan.CharacterFields) == 0 || plan.PreviousLevel != character.Level ||
 			plan.PreviousExperience != uint32(character.Stats["exp"]) || plan.NewLevel < plan.PreviousLevel ||
-			plan.NewExperience <= plan.PreviousExperience {
+			plan.NewExperience <= plan.PreviousExperience ||
+			plan.AdventureExperience > plan.Gain {
 			return ErrDirectExperienceConsumableContract
+		}
+
+		if plan.AdventureExperience > 0 && cmd.DirectExperienceAdventureGrowthPlanner != nil {
+			if tx.Account == nil || strings.TrimSpace(cmd.AccountID) == "" {
+				return fmt.Errorf("%w: adventure-growth account is unavailable", ErrDirectExperienceConsumableContract)
+			}
+			account, accountFound, accountErr := tx.Account.Load(ctx, cmd.AccountID)
+			if accountErr != nil {
+				return accountErr
+			}
+			if !accountFound || strings.TrimSpace(account.AccountID) != strings.TrimSpace(cmd.AccountID) {
+				return fmt.Errorf("%w: account=%q", ErrDirectExperienceConsumableContract, cmd.AccountID)
+			}
+			account = dnfrepo.CloneAccount(account)
+			if accountErr = cmd.DirectExperienceAdventureGrowthPlanner(
+				&account, plan.AdventureExperience, updatedAt,
+			); accountErr != nil {
+				return accountErr
+			}
+			account.UpdatedAt = updatedAt
+			if accountErr = tx.Account.Save(ctx, account); accountErr != nil {
+				return accountErr
+			}
 		}
 
 		remaining := stack.Count - 1
@@ -4514,6 +4539,7 @@ func (o *Owner) useDirectExperienceConsumable(
 			StackableType:                 resolution.StackableType,
 			DirectExperienceApplied:       true,
 			DirectExperienceGain:          plan.Gain,
+			DirectExperienceAdventureGain: plan.AdventureExperience,
 			DirectExperiencePreviousLevel: plan.PreviousLevel,
 			DirectExperienceNewLevel:      plan.NewLevel,
 			DirectExperiencePreviousTotal: plan.PreviousExperience,

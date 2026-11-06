@@ -77,6 +77,23 @@ func (s *Service) planDirectExperienceConsumable(
 	if err != nil {
 		return alignedcmd.DirectExperienceConsumablePlan{}, err
 	}
+	capTotal := uint32(0)
+	if planned.Experience.NewLevel >= currentAdventureCharacterLevelCap {
+		capTotal, err = tables.ThresholdToNext(currentAdventureCharacterLevelCap - 1)
+		if err != nil {
+			return alignedcmd.DirectExperienceConsumablePlan{}, err
+		}
+	}
+	adventureGain, err := directExperienceAdventureGain(
+		gain,
+		planned.Experience.PreviousLevel,
+		planned.Experience.NewLevel,
+		planned.Experience.PreviousExperience,
+		capTotal,
+	)
+	if err != nil {
+		return alignedcmd.DirectExperienceConsumablePlan{}, err
+	}
 	nextCharacter := dnfrepo.CloneCharacter(character)
 	nextSkill := dnfrepo.CloneSkill(skill)
 	nextCharacter.Level = planned.Experience.NewLevel
@@ -101,18 +118,48 @@ func (s *Service) planDirectExperienceConsumable(
 	nextCharacter.UpdatedAt = updatedAt
 	nextSkill.UpdatedAt = updatedAt
 	return alignedcmd.DirectExperienceConsumablePlan{
-		Character:          nextCharacter,
-		Skill:              nextSkill,
-		CharacterFields:    characterFields,
-		SkillFields:        skillFields,
-		Gain:               gain,
-		PreviousLevel:      planned.Experience.PreviousLevel,
-		NewLevel:           planned.Experience.NewLevel,
-		PreviousExperience: planned.Experience.PreviousExperience,
-		NewExperience:      planned.Experience.NewExperience,
-		SPGain:             planned.SkillPoints.SPGain,
-		TPGain:             planned.SkillPoints.TPGain,
+		Character:           nextCharacter,
+		Skill:               nextSkill,
+		CharacterFields:     characterFields,
+		SkillFields:         skillFields,
+		Gain:                gain,
+		AdventureExperience: adventureGain,
+		PreviousLevel:       planned.Experience.PreviousLevel,
+		NewLevel:            planned.Experience.NewLevel,
+		PreviousExperience:  planned.Experience.PreviousExperience,
+		NewExperience:       planned.Experience.NewExperience,
+		SPGain:              planned.SkillPoints.SPGain,
+		TPGain:              planned.SkillPoints.TPGain,
 	}, nil
+}
+
+// directExperienceAdventureGain returns only the experience awarded before
+// the character reaches level 90. The adventure-group growth owner applies
+// its own PVF rate (currently 0.30) to this value.
+func directExperienceAdventureGain(
+	gain uint32,
+	previousLevel int,
+	newLevel int,
+	previousExperience uint32,
+	capTotal uint32,
+) (uint32, error) {
+	if gain == 0 || previousLevel >= currentAdventureCharacterLevelCap {
+		return 0, nil
+	}
+	if newLevel < currentAdventureCharacterLevelCap {
+		return gain, nil
+	}
+	if newLevel > currentAdventureCharacterLevelCap || capTotal == 0 {
+		return 0, fmt.Errorf("direct experience level cap projection is invalid")
+	}
+	if previousExperience >= capTotal {
+		return 0, nil
+	}
+	preCap := capTotal - previousExperience
+	if gain > preCap {
+		return preCap, nil
+	}
+	return gain, nil
 }
 
 func directExperienceGain(

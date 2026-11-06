@@ -63,11 +63,15 @@ type Request struct {
 	ExperienceConsumableResolver  ExperienceConsumableResolver
 	StackableUseResolver          StackableUseResolver
 	DirectExperiencePlanner       DirectExperienceConsumablePlanner
-	QuestCompletionTicketPlanner  QuestCompletionTicketPlanner
-	StoryBookPlanner              StoryBookPlanner
-	ChronicleGrowthResolver       ChronicleGrowthResolver
-	InDungeon                     bool
-	DungeonID                     int64
+	// DirectExperienceAdventureGrowthPlanner credits only the pre-level-cap
+	// portion of direct-experience consumables into the account adventure-group
+	// growth ledger. It runs inside the same character settlement transaction.
+	DirectExperienceAdventureGrowthPlanner DirectExperienceAdventureGrowthPlanner
+	QuestCompletionTicketPlanner           QuestCompletionTicketPlanner
+	StoryBookPlanner                       StoryBookPlanner
+	ChronicleGrowthResolver                ChronicleGrowthResolver
+	InDungeon                              bool
+	DungeonID                              int64
 	// ConsumableFree marks a sandbox run (修炼道场) whose consumables are usable
 	// but never deducted: stackable use still runs for its effect, the owner just
 	// leaves the stack count alone.
@@ -764,17 +768,20 @@ type DirectExperienceConsumableResolution struct {
 // ledger. The inventory owner applies this plan and the source decrement in a
 // single CharacterSettlement transaction.
 type DirectExperienceConsumablePlan struct {
-	Character          dnfrepo.CharacterRecord
-	Skill              dnfrepo.SkillRecord
-	CharacterFields    []dnfrepo.CharacterField
-	SkillFields        []dnfrepo.SkillField
-	Gain               uint32
-	PreviousLevel      int
-	NewLevel           int
-	PreviousExperience uint32
-	NewExperience      uint32
-	SPGain             int
-	TPGain             int
+	Character       dnfrepo.CharacterRecord
+	Skill           dnfrepo.SkillRecord
+	CharacterFields []dnfrepo.CharacterField
+	SkillFields     []dnfrepo.SkillField
+	Gain            uint32
+	// AdventureExperience is the part of Gain that was actually earned below
+	// level 90. The adventure-group PVF rate is applied later by its owner.
+	AdventureExperience uint32
+	PreviousLevel       int
+	NewLevel            int
+	PreviousExperience  uint32
+	NewExperience       uint32
+	SPGain              int
+	TPGain              int
 }
 
 // DirectExperienceConsumablePlanner keeps runtime-PVF progression tables and
@@ -786,6 +793,15 @@ type DirectExperienceConsumablePlanner func(
 	resolution DirectExperienceConsumableResolution,
 	updatedAt time.Time,
 ) (DirectExperienceConsumablePlan, error)
+
+// DirectExperienceAdventureGrowthPlanner keeps adventure-group PVF and
+// persistence rules outside the inventory domain while allowing the inventory
+// owner to mutate and save the account in its existing SQL transaction.
+type DirectExperienceAdventureGrowthPlanner func(
+	account *dnfrepo.AccountRecord,
+	preCapExperience uint32,
+	updatedAt time.Time,
+) error
 
 // StackableUseResolution is the current-PVF authorization for an ordinary
 // type-44 stackable use. It exists separately from inventory Extra so legacy
