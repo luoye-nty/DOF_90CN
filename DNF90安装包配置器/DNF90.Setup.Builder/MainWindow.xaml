@@ -286,7 +286,7 @@
                         <Border Margin="0,18,0,0" Padding="12" Background="#08131E" BorderBrush="#244354" BorderThickness="1" CornerRadius="5">
                             <StackPanel>
                                 <TextBlock Text="压缩策略" Foreground="#A7CDDE" FontSize="12" />
-                                <TextBlock Text="落叶DNF登录器.exe、90CN.dll 和其他剩余文件合并为一个分区；Script.pvf 独立；ImagePacks2 按目标大小分成多个 ZIP 分卷。所有文件统一使用 ZIP Fastest 真实压缩，并并行处理多个分卷；安装时只覆盖同名文件，不会主动删除目标目录内其他文件。"
+                                <TextBlock Text="登录器、90CN.dll（存在时）和其他剩余文件合并为一个分区；Script.pvf 独立；ImagePacks2 按目标大小分成多个 ZIP 分卷。所有文件统一使用 ZIP Fastest 真实压缩，并并行处理多个分卷；安装时只覆盖同名文件，不会主动删除目标目录内其他文件。"
                                            Margin="0,6,0,0"
                                            Foreground="#6F9DB2"
                                            FontSize="11"

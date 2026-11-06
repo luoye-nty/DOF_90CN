@@ -40,8 +40,9 @@ dotnet run --project .\DNF90.Setup.SmokeTest\DNF90.Setup.SmokeTest.csproj -c Rel
 ```text
 ImagePacks2\
 Script.pvf
-90CN.dll
 ```
+
+`90CN.dll` 不再是必需文件；如果客户端根目录存在该文件，会随登录器配件一起打包。
 
 登录器文件名不固定。选择客户端目录后，配置器会列出根目录下的 EXE，自动优先
 选择名称包含“登录器”的文件，也可以手动选择其他文件名。所选登录器的完整文件名
@@ -67,7 +68,7 @@ DNF_LY_1.0.1_002.zip
 配置器会生成以下独立压缩分区：
 
 - `DNF_LY_版本号_001.zip`：Script.pvf
-- `DNF_LY_版本号_002.zip`：落叶DNF登录器、90CN.dll 和其他全部剩余文件
+- `DNF_LY_版本号_002.zip`：落叶DNF登录器、90CN.dll（存在时）和其他全部剩余文件
 - `DNF_LY_版本号_003.zip` 起：ImagePacks2 分卷（默认每个目标 4 GB）
 
 所有分卷统一使用 ZIP Fastest 级别的 Deflate 真实压缩，并根据 CPU 核心数并行
@@ -106,6 +107,6 @@ DNF_LY_1.0.1_005.zip
 - 全量发布：生成 PVF、登录器配件和全部 ImagePacks2 分卷。
 - PVF 发布：只重新生成 `001.zip`。
 - NPK 发布：只重新生成 ImagePacks2 的 `003.zip` 及后续分卷。
-- 登录器配件发布：只重新生成 `002.zip`，内容包含登录器、90CN.dll 和其他剩余文件。
+- 登录器配件发布：只重新生成 `002.zip`，内容包含登录器、可选的 90CN.dll 和其他剩余文件。
 
 单项发布固定使用分卷模式，不依赖之前是否做过全量发布。重复发布会覆盖相同编号和名称的 `.zip`，不会删除其他分卷。

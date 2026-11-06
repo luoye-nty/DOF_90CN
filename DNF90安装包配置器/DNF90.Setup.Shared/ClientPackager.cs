@@ -15,6 +15,11 @@ public static class ClientPackager
     private static readonly string[] RequiredRootFiles =
     {
         "Script.pvf",
+    };
+
+    private static readonly string[] KnownPartitionRootFiles =
+    {
+        "Script.pvf",
         "90CN.dll",
     };
 
@@ -41,7 +46,7 @@ public static class ClientPackager
         }
 
         var exclusions = new HashSet<string>(
-            RequiredRootFiles.Append(".dnf90-install-manifest.json"),
+            KnownPartitionRootFiles.Append(".dnf90-install-manifest.json"),
             StringComparer.OrdinalIgnoreCase);
 
         var allFiles = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
