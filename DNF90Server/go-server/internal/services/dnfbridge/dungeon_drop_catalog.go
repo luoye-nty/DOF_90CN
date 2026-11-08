@@ -66,6 +66,8 @@ type dungeonDropItemDefinition struct {
 	CustomAbilityCount int64
 	Grade              int64
 	Rarity             int64
+	MonsterCardBind    int64
+	MonsterCardBindOK  bool
 	MinimumLevel       int64
 	MaximumLevel       int64
 	// Reinforcement display depends on the equipment's actual base combat
@@ -461,6 +463,10 @@ func (c *pvfDungeonDropCatalog) ResolveItem(itemID uint32) (dungeonDropItemDefin
 	}
 	definition.Explain = strings.Join(document.Texts("explain"), "\n")
 	definition.Rarity, _ = document.Int("rarity")
+	if bind, found := document.Int("monstercard bind"); found {
+		definition.MonsterCardBind = bind
+		definition.MonsterCardBindOK = true
+	}
 	definition.MinimumLevel, _ = document.Int("minimum level")
 	definition.CreationRate, _ = document.Int("creation rate")
 	definition.ExperienceSourceKey = c.experienceSourceKeys[itemID]

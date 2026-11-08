@@ -112,6 +112,7 @@ constexpr uintptr_t kGameWideAssignRva = 0x00038270;
 constexpr uintptr_t kChecksumRva = 0x030545B0;
 constexpr uintptr_t kDprotoRoutePredicateRva = 0x030734E0; // sub_34734E0
 constexpr uintptr_t kDprotoOutgoingGateRva = 0x030738FA;   // JZ after mode-7 predicate
+constexpr uintptr_t kDprotoOutgoingTruePathRva = 0x03073900; // predicate-true packet finalization
 constexpr uintptr_t kDprotoOutgoingCloneRva = 0x0307391C;  // first mode-7 call
 constexpr uintptr_t kDprotoOutgoingResumeRva = 0x03073921; // after stolen 5 bytes at clone site
 constexpr uintptr_t kDprotoOutgoingReturnRva = 0x03073A2E;
@@ -244,6 +245,18 @@ constexpr unsigned short kBossMutationPrivateOpcode = 413;
 constexpr unsigned int kBossMutationPrivatePacketLength = 28;
 constexpr unsigned char kBossMutationPrivateType = 3;
 constexpr unsigned char kBossMutationPrivateVersion = 1;
+// Current NoPack op414 takes the DPROTO predicate-false path.  Its selective
+// clone is finalized but is not handed to the upper writer by the native
+// caller, so the request disappears before the socket.  Tunnel the exact
+// request through the already-proven op1456 C2S private hole.  The server
+// unwraps it and dispatches the original opcode/body under the same session.
+constexpr unsigned int kMonsterCardSynthesisTunnelMagic = 0x3143534D; // "MSC1"
+constexpr unsigned char kMonsterCardSynthesisTunnelVersion = 1;
+constexpr unsigned short kMonsterCardSynthesisOpcode = 414;
+constexpr unsigned short kMonsterCardSynthesisTunnelOpcode = 1456;
+constexpr UINT kMonsterCardSynthesisTunnelWindowMessage = WM_APP + 0x2D4;
+constexpr unsigned int kMonsterCardSynthesisTunnelMaxPacketLength = 13 + 13;
+constexpr size_t kMonsterCardSynthesisTunnelQueueCapacity = 16;
 // The current EXE saves the 512-byte cooldown-reminder table from this global
 // object's +0x288 field, but registers no native class-0/391 restore callback.
 constexpr uintptr_t kCharacterOptionManagerRva = 0x04D97A98;
@@ -966,6 +979,7 @@ uintptr_t g_gameAllocatorFn = 0;
 uintptr_t g_gameMemcpyFn = 0;
 uintptr_t g_dprotoOutgoingResume = 0;
 uintptr_t g_dprotoOutgoingReturn = 0;
+uintptr_t g_dprotoOutgoingTruePath = 0;
 uintptr_t g_dprotoFalseResume = 0;
 // Trade-window close notification.  The current client sends no packet at all
 // when the player closes the trade window, so the server cannot learn about the
@@ -1281,6 +1295,14 @@ volatile LONG g_skillQuickSlotMouseDragSource = -1;
 void* g_skillQuickSlotHotkeyResume = nullptr;
 WNDPROC g_originalDnfWindowProc = nullptr;
 HWND g_dnfWindow = nullptr;
+SRWLOCK g_monsterCardSynthesisTunnelLock = SRWLOCK_INIT;
+unsigned char g_monsterCardSynthesisTunnelPackets
+    [kMonsterCardSynthesisTunnelQueueCapacity]
+    [kMonsterCardSynthesisTunnelMaxPacketLength] = {};
+unsigned int g_monsterCardSynthesisTunnelLengths
+    [kMonsterCardSynthesisTunnelQueueCapacity] = {};
+bool g_monsterCardSynthesisTunnelPending
+    [kMonsterCardSynthesisTunnelQueueCapacity] = {};
 PVOID volatile g_luaNoticeBridgeWindow = nullptr;
 volatile LONG g_luaNoticeWindowMessage = 0;
 HWND g_luaNoticeOverlayWindow = nullptr;
@@ -1678,6 +1700,12 @@ __declspec(noinline) void __cdecl LogClientToServerPacket(
     int messageType, const void* body, int bodyLength);
 __declspec(noinline) void __cdecl LogServerToClientPacket(
     int messageType, const void* body, int bodyLength);
+void __cdecl TraceDprotoDirectOpcode(unsigned int opcode);
+void __cdecl TraceDprotoFalseOpcode(unsigned int opcode);
+bool __cdecl SendMonsterCardSynthesisTunnel(
+    const unsigned char* packet, unsigned int packetLength);
+bool __cdecl QueueMonsterCardSynthesisTunnel(
+    const unsigned char* packet, unsigned int packetLength);
 
 __declspec(noinline) LRESULT WINAPI ProxySendMessageW(
     HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -2185,6 +2213,12 @@ __declspec(noinline) void LogProtocolPacket(
 __declspec(noinline) void __cdecl LogClientToServerPacket(
     int messageType, const void* body, int bodyLength)
 {
+    // Temporary transport diagnosis for card synthesis. Keep this narrowly
+    // scoped so normal gameplay does not enable the full packet-body trace.
+    if (messageType == 414 || messageType == 1518) {
+        LogLine("dproto-send-probe opcode=%d body_len=%d",
+            messageType, bodyLength);
+    }
     // The premium-contract fallback must distinguish a native op44 emitted
     // during the same right-click cycle from a missing native dispatch. Keep
     // this counter independent from optional packet-body tracing.
@@ -2223,6 +2257,22 @@ bool TryGetDungeonSelectFatiguePromptReason(
 __declspec(noinline) void __cdecl LogServerToClientPacket(
     int messageType, const void* body, int bodyLength)
 {
+    if (messageType == 414) {
+        const unsigned char* bytes = static_cast<const unsigned char*>(body);
+        char hex[64] = {};
+        int used = 0;
+        __try {
+            for (int index = 0; index < bodyLength && index < 19; ++index) {
+                used += _snprintf(hex + used, sizeof(hex) - used,
+                    index == 0 ? "%02X" : " %02X", bytes[index]);
+                if (used < 0 || used >= static_cast<int>(sizeof(hex))) break;
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            _snprintf(hex, sizeof(hex), "<read-exception>");
+        }
+        LogLine("monster-card-s2c body_len=%d body=%s", bodyLength, hex);
+    }
     LogProtocolPacket("S2C", messageType, body, bodyLength);
     unsigned char reason = 0;
     if (TryGetDungeonSelectFatiguePromptReason(
@@ -2430,7 +2480,7 @@ bool IsObservedDispatchOpcode(unsigned int classID, unsigned int opcode)
     if (classID == 1) {
         return opcode == 4 || opcode == 7 || opcode == 10 || opcode == 11 ||
             opcode == 19 || opcode == 85 || opcode == 254 ||
-            opcode == 81 || opcode == 1021 ||
+            opcode == 81 || opcode == 414 || opcode == 1021 ||
             // 2026-09-13: 宝珠附魔(272) 与晶体契约状态(898) 的抓取开关。
             // 现场表现为"宝珠附魔成功后账号晶体/灵魂面板立刻被清空、小退恢复"，
             // 服务端确认没有下发 354..365 的删除行，因此需要看客户端处理 272 时
@@ -10300,6 +10350,30 @@ LRESULT CALLBACK ProxyDnfWindowProc(
         return 0;
     }
 
+    if (message == kMonsterCardSynthesisTunnelWindowMessage) {
+        size_t slot = static_cast<size_t>(wParam);
+        unsigned char packet[kMonsterCardSynthesisTunnelMaxPacketLength] = {};
+        unsigned int packetLength = 0;
+        bool pending = false;
+        if (slot < kMonsterCardSynthesisTunnelQueueCapacity) {
+            AcquireSRWLockExclusive(&g_monsterCardSynthesisTunnelLock);
+            pending = g_monsterCardSynthesisTunnelPending[slot];
+            if (pending) {
+                packetLength = g_monsterCardSynthesisTunnelLengths[slot];
+                memcpy(packet, g_monsterCardSynthesisTunnelPackets[slot],
+                    packetLength);
+                g_monsterCardSynthesisTunnelPending[slot] = false;
+            }
+            ReleaseSRWLockExclusive(&g_monsterCardSynthesisTunnelLock);
+        }
+        if (pending) {
+            SendMonsterCardSynthesisTunnel(packet, packetLength);
+        } else {
+            LogLine("monster-card-tunnel UI dequeue missing slot=%zu", slot);
+        }
+        return 0;
+    }
+
     if (message == WM_TIMER && wParam == kDungeonPickupRepairTimer) {
         if (g_luaDungeonEntryStage != kLuaDungeonEntryActive) {
             KillTimer(hWnd, kDungeonPickupRepairTimer);
@@ -15400,6 +15474,17 @@ __declspec(naked) void ProxyDprotoSendDirect()
         // Load the opcode only for log/probe parity with the historical PS1
         // trampoline. Do not let it affect the cloned packet pointer.
         movzx eax, word ptr [esi + 1]
+        cmp ax, 414
+        jne dproto_direct_trace_done
+        pushfd
+        pushad
+        push eax
+        call TraceDprotoDirectOpcode
+        add esp, 4
+        popad
+        popfd
+
+    dproto_direct_trace_done:
 
         // The native CRC call immediately before this entry is cdecl; discard
         // its two arguments exactly as the original path does at 0x3473924.
@@ -15452,6 +15537,17 @@ __declspec(naked) void ProxyDprotoFalseSelective()
 {
     __asm {
         movzx eax, word ptr [esi + 1]
+        cmp ax, 414
+        jne dproto_false_trace_done
+        pushfd
+        pushad
+        push eax
+        call TraceDprotoFalseOpcode
+        add esp, 4
+        popad
+        popfd
+
+    dproto_false_trace_done:
 
         cmp ax, 64
         je dproto_false_clone
@@ -15499,6 +15595,8 @@ __declspec(naked) void ProxyDprotoFalseSelective()
         je dproto_false_clone
         cmp ax, 132
         je dproto_false_clone
+        cmp ax, 414
+        je dproto_false_monster_card_tunnel
         cmp ax, 143
         je dproto_false_clone
         cmp ax, 491
@@ -15553,10 +15651,146 @@ __declspec(naked) void ProxyDprotoFalseSelective()
         pop edi
         jmp dword ptr [g_dprotoFalseResume]
 
+    dproto_false_monster_card_tunnel:
+        // Copy the finalized inner packet and defer the writer call to the main
+        // window message loop. Calling the upper writer directly from inside
+        // DPROTO re-enters the outgoing finalizer and overflows the stack.
+        pushfd
+        pushad
+        push dword ptr [ebp + 0Ch]
+        push dword ptr [ebp + 08h]
+        call QueueMonsterCardSynthesisTunnel
+        add esp, 8
+        popad
+        popfd
+        mov edx, dword ptr [ebp + 14h]
+        mov dword ptr [edx], 0
+        jmp dword ptr [g_dprotoFalseResume]
+
     dproto_false_oom:
         pop edi
         jmp dword ptr [g_dprotoFalseResume]
     }
+}
+
+void __cdecl TraceDprotoDirectOpcode(unsigned int opcode)
+{
+    if (opcode == 414) {
+        LogLine("dproto-route-probe branch=direct opcode=%u", opcode);
+    }
+}
+
+void __cdecl TraceDprotoFalseOpcode(unsigned int opcode)
+{
+    if (opcode == 414) {
+        LogLine("dproto-route-probe branch=false-selective opcode=%u", opcode);
+    }
+}
+
+bool __cdecl SendMonsterCardSynthesisTunnel(
+    const unsigned char* packet, unsigned int packetLength)
+{
+    constexpr unsigned int kInnerHeaderLength = 13;
+    if (!packet || packetLength < kInnerHeaderLength + 7 ||
+        packetLength > kInnerHeaderLength + 13) {
+        LogLine("monster-card-tunnel rejected packet_len=%u", packetLength);
+        return false;
+    }
+    const unsigned int bodyLength = packetLength - kInnerHeaderLength;
+    if (bodyLength != 7 && bodyLength != 9 &&
+        bodyLength != 11 && bodyLength != 13) {
+        LogLine("monster-card-tunnel rejected body_len=%u", bodyLength);
+        return false;
+    }
+
+    bool sent = false;
+    __try {
+        UpperWriterValueFn value = reinterpret_cast<UpperWriterValueFn>(
+            g_dnfBase + kUpperWriterValueRva);
+        UpperWriterScalarFn writeU8 = reinterpret_cast<UpperWriterScalarFn>(
+            g_dnfBase + kUpperWriterU8Rva);
+        UpperWriterScalarFn writeU16 = reinterpret_cast<UpperWriterScalarFn>(
+            g_dnfBase + kUpperWriterU16Rva);
+        UpperWriterScalarFn writeU32 = reinterpret_cast<UpperWriterScalarFn>(
+            g_dnfBase + kUpperWriterU32Rva);
+        UpperWriterFlushFn flush = reinterpret_cast<UpperWriterFlushFn>(
+            g_dnfBase + kUpperWriterFlushRva);
+        if (!value || !writeU8 || !writeU16 || !writeU32 || !flush) {
+            LogLine("monster-card-tunnel writer unavailable");
+            return false;
+        }
+
+        writeU16(value(), kMonsterCardSynthesisTunnelOpcode);
+        writeU32(value(), kMonsterCardSynthesisTunnelMagic);
+        writeU8(value(), kMonsterCardSynthesisTunnelVersion);
+        writeU8(value(), 0);
+        writeU16(value(), kMonsterCardSynthesisOpcode);
+        writeU16(value(), static_cast<unsigned short>(bodyLength));
+        const unsigned char* body = packet + kInnerHeaderLength;
+        for (unsigned int index = 0; index < bodyLength; ++index) {
+            writeU8(value(), body[index]);
+        }
+        flush();
+        sent = true;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        LogLine("monster-card-tunnel send exception code=0x%08X",
+            GetExceptionCode());
+    }
+    LogLine("monster-card-tunnel sent=%d body_len=%u body=%02X %02X %02X %02X %02X %02X %02X",
+        sent ? 1 : 0, bodyLength,
+        bodyLength > 0 ? packet[kInnerHeaderLength] : 0,
+        bodyLength > 1 ? packet[kInnerHeaderLength + 1] : 0,
+        bodyLength > 2 ? packet[kInnerHeaderLength + 2] : 0,
+        bodyLength > 3 ? packet[kInnerHeaderLength + 3] : 0,
+        bodyLength > 4 ? packet[kInnerHeaderLength + 4] : 0,
+        bodyLength > 5 ? packet[kInnerHeaderLength + 5] : 0,
+        bodyLength > 6 ? packet[kInnerHeaderLength + 6] : 0);
+    return sent;
+}
+
+bool __cdecl QueueMonsterCardSynthesisTunnel(
+    const unsigned char* packet, unsigned int packetLength)
+{
+    if (!packet || packetLength < 13 + 7 ||
+        packetLength > kMonsterCardSynthesisTunnelMaxPacketLength ||
+        !g_dnfWindow) {
+        LogLine("monster-card-tunnel queue rejected packet_len=%u hwnd=%p",
+            packetLength, g_dnfWindow);
+        return false;
+    }
+
+    size_t slot = kMonsterCardSynthesisTunnelQueueCapacity;
+    AcquireSRWLockExclusive(&g_monsterCardSynthesisTunnelLock);
+    for (size_t index = 0;
+         index < kMonsterCardSynthesisTunnelQueueCapacity; ++index) {
+        if (!g_monsterCardSynthesisTunnelPending[index]) {
+            slot = index;
+            g_monsterCardSynthesisTunnelPending[index] = true;
+            g_monsterCardSynthesisTunnelLengths[index] = packetLength;
+            memcpy(g_monsterCardSynthesisTunnelPackets[index], packet,
+                packetLength);
+            break;
+        }
+    }
+    ReleaseSRWLockExclusive(&g_monsterCardSynthesisTunnelLock);
+    if (slot == kMonsterCardSynthesisTunnelQueueCapacity) {
+        LogLine("monster-card-tunnel queue full packet_len=%u", packetLength);
+        return false;
+    }
+
+    if (!PostMessageW(g_dnfWindow, kMonsterCardSynthesisTunnelWindowMessage,
+            static_cast<WPARAM>(slot), 0)) {
+        AcquireSRWLockExclusive(&g_monsterCardSynthesisTunnelLock);
+        g_monsterCardSynthesisTunnelPending[slot] = false;
+        ReleaseSRWLockExclusive(&g_monsterCardSynthesisTunnelLock);
+        LogLine("monster-card-tunnel PostMessage failed slot=%zu error=%lu",
+            slot, GetLastError());
+        return false;
+    }
+    LogLine("monster-card-tunnel queued slot=%zu packet_len=%u",
+        slot, packetLength);
+    return true;
 }
 
 bool __stdcall IsSceneRouteOpcodeAllowed(uint16_t opcode)
@@ -15692,6 +15926,7 @@ bool __stdcall IsSceneRouteOpcodeAllowed(uint16_t opcode)
     case 400:
     case 412:
     case 413:
+    case 414: // CmdPacketMonstercardBind — card synthesis request/result popup
     case 448:
     case 491:
     case 518:
@@ -17802,6 +18037,7 @@ DWORD WINAPI InstallWorkerInner(void*)
     g_gameMemcpyFn = g_dnfBase + kGameMemcpyRva;
     g_dprotoOutgoingResume = g_dnfBase + kDprotoOutgoingResumeRva;
     g_dprotoOutgoingReturn = g_dnfBase + kDprotoOutgoingReturnRva;
+    g_dprotoOutgoingTruePath = g_dnfBase + kDprotoOutgoingTruePathRva;
     g_dprotoFalseResume = g_dnfBase + kDprotoFalseResumeRva;
     g_mode0OwnerRemoteResume = g_dnfBase + kMode0OwnerRemoteRva;
     g_mode0OwnerLocalResume = g_dnfBase + kMode0OwnerLocalRva;
@@ -18903,6 +19139,7 @@ DWORD WINAPI InstallTransportWorkerInner(void*)
     g_gameMemcpyFn = g_dnfBase + kGameMemcpyRva;
     g_dprotoOutgoingResume = g_dnfBase + kDprotoOutgoingResumeRva;
     g_dprotoOutgoingReturn = g_dnfBase + kDprotoOutgoingReturnRva;
+    g_dprotoOutgoingTruePath = g_dnfBase + kDprotoOutgoingTruePathRva;
     g_dprotoFalseResume = g_dnfBase + kDprotoFalseResumeRva;
 
     // The launcher opts in with DNF_MULTI_CLIENT=1. Keep this limited to the

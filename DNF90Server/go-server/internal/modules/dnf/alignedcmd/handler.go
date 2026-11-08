@@ -46,6 +46,7 @@ type Request struct {
 	EnchantBeadResolver           EnchantBeadResolver
 	MonsterCardUpgradeResolver    MonsterCardUpgradeResolver
 	MonsterCardUpgradePolicy      MonsterCardUpgradePolicy
+	MonsterCardSynthesisPlanner   MonsterCardSynthesisPlanner
 	AmplifyItemResolver           AmplifyItemResolver
 	RandomOptionResolver          RandomOptionResolver
 	EquipmentRegenerationResolver EquipmentRegenerationResolver
@@ -256,6 +257,32 @@ type MonsterCardUpgradePolicy struct {
 	MinimumExperienceGain int
 	MaximumExperienceGain int
 }
+
+// MonsterCardSynthesisPlan is the runtime-PVF result of combining a binder and
+// two through five monster cards. The inventory owner revalidates every source
+// stack inside its transaction before applying the consumption and output.
+type MonsterCardSynthesisPlan struct {
+	BinderItemID  int64
+	CardItemIDs   []int64
+	BinderMinimum int64
+	CardRarities  []int
+	ResultRarity  int
+	Chance        int
+	Roll          int
+	UpgradeRoll   bool
+	GoldCost      int64
+	Output        MagicBoxRewardItem
+	StackableType string
+}
+
+// MonsterCardSynthesisPlanner resolves and rolls one op414 synthesis from the
+// live PVF. It is invoked while the inventory transaction owns the source
+// stacks, so a changed inventory cannot be reconciled against stale metadata.
+type MonsterCardSynthesisPlanner func(
+	binderType int,
+	binder dnfrepo.ItemStack,
+	cards []dnfrepo.ItemStack,
+) (MonsterCardSynthesisPlan, error)
 
 // AmplifyWeightedLevel is one runtime-PVF [amplification random value]
 // level/weight pair carried by a specific Pure Gold material.

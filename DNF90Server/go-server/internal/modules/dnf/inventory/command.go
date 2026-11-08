@@ -117,6 +117,8 @@ type Command struct {
 	ChronicleTicketID     int64
 	ChronicleTargetID     int64
 	ChronicleMaterialID   int64
+	MonsterCardSynthSlots []MonsterCardSynthesisSlotCandidate
+	MonsterCardSynthRaw   []byte
 	// DirectExperienceAdventureGrowthPlanner credits the pre-level-cap part of
 	// an experience consumable into the account adventure-group growth ledger.
 	DirectExperienceAdventureGrowthPlanner alignedcmd.DirectExperienceAdventureGrowthPlanner
@@ -139,6 +141,13 @@ func NewMonsterCardUpgradeCommand(req alignedcmd.Request, parsed MonsterCardUpgr
 	cmd.TargetSlotIndex = parsed.TargetSlot
 	cmd.MaterialSlotIndex = parsed.MaterialSlot
 	cmd.Count = int32(parsed.MaterialCount)
+	return cmd
+}
+
+func NewMonsterCardSynthesisCommand(req alignedcmd.Request, parsed MonsterCardSynthesisRequest) Command {
+	cmd := baseCommand(req, "synthesize_monster_card", "op414 + runtime-PVF card pools + atomic binder/two-card/gold mutation")
+	cmd.MonsterCardSynthSlots = append([]MonsterCardSynthesisSlotCandidate(nil), parsed.Candidates...)
+	cmd.MonsterCardSynthRaw = append([]byte(nil), parsed.RawBody...)
 	return cmd
 }
 

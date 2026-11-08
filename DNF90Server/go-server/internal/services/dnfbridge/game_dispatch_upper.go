@@ -105,6 +105,26 @@ func (s *Service) handleGameUpper(session *gameSession, raw []byte) error {
 		}
 	}()
 	if packet.Header.MsgID == currentCommandCapabilityOpcode {
+		if body, ok := parseMonsterCardSynthesisTunnel(packet.Body); ok {
+			s.logInfo("dnfbridge monster card synthesis tunnel received",
+				"conn_id", session.connID,
+				"wire_body_len", len(packet.Body),
+				"request_body_len", len(body))
+			handled, err := s.handleAlignedGameCommand(
+				session,
+				packet.Header.Classification,
+				uint16(dnfenum.CmdPacketMonstercardBind),
+				body,
+			)
+			if err != nil {
+				return err
+			}
+			if !handled {
+				s.logGameEvent(session, "game-monster-card-synthesis-tunnel-unhandled",
+					"body_len", len(body))
+			}
+			return nil
+		}
 		if isCurrentDungeonBossMutationEnvelope(packet.Body) {
 			return s.handleCurrentDungeonBossMutation(
 				session,

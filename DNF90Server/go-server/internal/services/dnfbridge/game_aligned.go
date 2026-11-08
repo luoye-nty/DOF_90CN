@@ -51,6 +51,17 @@ var gameAlignedRegistry = alignedcmd.NewRegistry(
 // handleAlignedGameCommand 把协议号已对齐、但尚未落业务实现的命令归入模块边界。
 // 当前只记录分流证据，不伪造成功 ACK；具体回包必须等对应模块按 EXE/日志补齐。
 func (s *Service) handleAlignedGameCommand(session *gameSession, cmd byte, typ uint16, body []byte) (bool, error) {
+	if typ == monsterCardSynthesisTunnelOpcode {
+		if request, ok := parseMonsterCardSynthesisTunnel(body); ok {
+			s.logInfo("dnfbridge monster card synthesis tunnel received",
+				"conn_id", session.connID,
+				"transport", "aligned-game-command",
+				"wire_body_len", len(body),
+				"request_body_len", len(request))
+			typ = uint16(dnfenum.CmdPacketMonstercardBind)
+			body = request
+		}
+	}
 	// 宠物蛋判据是进程级的、由运行时 PVF 证明的，装配一次即可；未装配时
 	// creaturestate 保持改动前的行为。
 	s.installPetEggProbeOnce()
@@ -189,6 +200,19 @@ func (s *Service) handleAlignedGameCommand(session *gameSession, cmd byte, typ u
 			"selected_character_id", session.selectedCharacterID,
 			"type", typ,
 			"error", monsterCardUpgradeCatalogErr)
+	}
+	monsterCardSynthesisPlanner, monsterCardSynthesisCatalogErr := s.alignedMonsterCardSynthesisPlannerForCommand(dnfenum.CmdPacket(typ))
+	if monsterCardSynthesisCatalogErr != nil {
+		s.logPacketEvent("game-aligned-monster-card-synthesis-catalog-unavailable",
+			"conn_id", session.connID,
+			"account_id", accountID,
+			"selected_character_id", session.selectedCharacterID,
+			"type", typ,
+			"error", monsterCardSynthesisCatalogErr)
+		s.logInfo("dnfbridge monster card synthesis catalog unavailable",
+			"selected_character_id", session.selectedCharacterID,
+			"type", typ,
+			"error", monsterCardSynthesisCatalogErr)
 	}
 	amplifyItemResolver, amplifyItemCatalogErr := s.alignedAmplifyItemResolverForCommand(dnfenum.CmdPacket(typ))
 	if amplifyItemCatalogErr != nil {
@@ -614,6 +638,7 @@ func (s *Service) handleAlignedGameCommand(session *gameSession, cmd byte, typ u
 		EnchantBeadResolver:                    enchantBeadResolver,
 		MonsterCardUpgradeResolver:             monsterCardUpgradeResolver,
 		MonsterCardUpgradePolicy:               s.currentMonsterCardUpgradePolicy(routeContext, repos, session),
+		MonsterCardSynthesisPlanner:            monsterCardSynthesisPlanner,
 		AmplifyItemResolver:                    amplifyItemResolver,
 		RandomOptionResolver:                   randomOptionResolver,
 		EquipmentRegenerationResolver:          equipmentRegenerationResolver,
@@ -651,6 +676,20 @@ func (s *Service) handleAlignedGameCommand(session *gameSession, cmd byte, typ u
 	})
 	routeCancel()
 	session.party.mu.Unlock()
+	if typ == uint16(dnfenum.CmdPacketMonstercardBind) {
+		s.logInfo("dnfbridge monster card synthesis route result",
+			"conn_id", session.connID,
+			"ok", ok,
+			"error", err,
+			"handled", result.Handled,
+			"response_allowed", result.ResponseAllowed,
+			"operation", result.Operation,
+			"response_count", len(result.UpperResponses),
+			"reason", result.Reason,
+			"decision_action", result.Decision.Action,
+			"decision_domain", result.Decision.Domain,
+			"decision_support", result.Decision.Support)
+	}
 	if err != nil || !ok {
 		return ok, err
 	}

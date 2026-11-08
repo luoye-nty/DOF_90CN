@@ -776,6 +776,39 @@ func (handler) Handle(ctx context.Context, req alignedcmd.Request) (alignedcmd.R
 			return rejectedMonsterCardUpgradeResult(req.Opcode, cmd, monsterCardUpgradeErrorInvalid, err), nil
 		}
 		return ownerAppliedMonsterCardUpgradeResult(req.Opcode, cmd, result), nil
+	case dnfenum.CmdPacketMonstercardBind:
+		parsed, err := DecodeMonsterCardSynthesisRequest(req.Body)
+		cmd := NewMonsterCardSynthesisCommand(req, parsed)
+		if err != nil {
+			return rejectedMonsterCardSynthesisResult(req.Opcode, cmd, monsterCardSynthesisErrorInvalid, err), nil
+		}
+		if req.MonsterCardSynthesisPlanner == nil {
+			return rejectedMonsterCardSynthesisResult(
+				req.Opcode,
+				cmd,
+				monsterCardSynthesisErrorInvalid,
+				ErrMonsterCardSynthesisContract,
+			), nil
+		}
+		owner, err := NewOwner(req.Repositories)
+		if err != nil {
+			return rejectedMonsterCardSynthesisResult(
+				req.Opcode,
+				cmd,
+				monsterCardSynthesisErrorInvalid,
+				err,
+			), nil
+		}
+		result, err := owner.SynthesizeMonsterCards(ctx, cmd, req.MonsterCardSynthesisPlanner)
+		if err != nil {
+			return rejectedMonsterCardSynthesisResult(
+				req.Opcode,
+				cmd,
+				monsterCardSynthesisErrorInvalid,
+				err,
+			), nil
+		}
+		return ownerAppliedMonsterCardSynthesisResult(req.Opcode, cmd, result), nil
 	case dnfenum.CmdPacketPurifyItem:
 		parsed, err := DecodePurifyItemRequest(req.Body)
 		cmd := NewPurifyItemCommand(req, parsed)
@@ -1645,6 +1678,77 @@ func ownerAppliedMonsterCardUpgradeResult(opcode uint16, cmd Command, result Mon
 		ItemSlotRefreshes:  refreshes,
 		ItemListRebuilds:   rebuilds,
 		CharacterGoldAfter: &goldAfter,
+	}
+}
+
+func rejectedMonsterCardSynthesisResult(opcode uint16, cmd Command, errorCode byte, err error) alignedcmd.Result {
+	return alignedcmd.Result{
+		Handled:         true,
+		ResponseAllowed: true,
+		Operation:       cmd.Operation,
+		Reason: fmt.Sprintf(
+			"monster card synthesis rejected: raw=%X error=%d: %v",
+			cmd.MonsterCardSynthRaw,
+			errorCode,
+			err,
+		),
+		UpperResponses: []alignedcmd.UpperResponse{
+			class1Response(opcode, buildMonsterCardSynthesisErrorAck(errorCode)),
+		},
+	}
+}
+
+func ownerAppliedMonsterCardSynthesisResult(
+	opcode uint16,
+	cmd Command,
+	result MonsterCardSynthesisResult,
+) alignedcmd.Result {
+	if !result.Success {
+		return rejectedMonsterCardSynthesisResult(
+			opcode,
+			cmd,
+			result.ErrorCode,
+			fmt.Errorf("repository state did not satisfy the op414 card-synthesis contract"),
+		)
+	}
+	refreshes := make([]alignedcmd.ItemSlotRefresh, 0, len(result.ChangedSlots))
+	for _, slot := range result.ChangedSlots {
+		refreshes = append(refreshes, alignedcmd.ItemSlotRefresh{
+			ListType:  listTypeMain,
+			SlotIndex: slot,
+		})
+	}
+	updatedGold := result.UpdatedGold
+	return alignedcmd.Result{
+		Handled:         true,
+		ResponseAllowed: true,
+		Operation:       cmd.Operation,
+		Reason: fmt.Sprintf(
+			"monster card synthesis committed: raw=%X slots=%d,%d,%d result_slot=%d "+
+				"rarity=%d+%d->%d success_roll=%t chance=%d/%d binder=%d type=%d cards=%d,%d output=%d gold_cost=%d",
+			cmd.MonsterCardSynthRaw,
+			result.BinderSlot,
+			result.FirstSlot,
+			result.SecondSlot,
+			result.ResultSlot,
+			result.FirstRarity,
+			result.SecondRarity,
+			result.ResultRarity,
+			result.UpgradeRoll,
+			result.Chance,
+			100000,
+			result.BinderItemID,
+			result.BinderType,
+			result.FirstItemID,
+			result.SecondItemID,
+			result.ResultItemID,
+			result.GoldCost,
+		),
+		UpperResponses: []alignedcmd.UpperResponse{
+			class1Response(opcode, buildMonsterCardSynthesisSuccessAck(result)),
+		},
+		ItemSlotRefreshes:  refreshes,
+		CharacterGoldAfter: &updatedGold,
 	}
 }
 

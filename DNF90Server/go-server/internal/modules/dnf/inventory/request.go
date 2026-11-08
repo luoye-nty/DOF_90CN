@@ -227,6 +227,23 @@ type MonsterCardUpgradeRequest struct {
 	MaterialSlot  int16
 }
 
+// MonsterCardSynthesisSlotCandidate is one possible interpretation of the
+// current op414 body. The client has been observed sending both 7- and 9-byte
+// bodies; recent packets may carry one list byte and three or four i16 fields.
+// The owner resolves the candidates against durable binder/card identities and
+// proceeds only when exactly one interpretation is a valid combination.
+type MonsterCardSynthesisSlotCandidate struct {
+	BinderSlot int16
+	BinderType byte
+	CardSlots  []int16
+	Layout     string
+}
+
+type MonsterCardSynthesisRequest struct {
+	Candidates []MonsterCardSynthesisSlotCandidate
+	RawBody    []byte
+}
+
 // DecodeDeleteRequest 解析删除物品请求，兼容 C# 里 simple 与 extended 两种格式。
 func DecodeDeleteRequest(body []byte) (DeleteRequest, error) {
 	// Skill-material consumption appends a one-byte state marker (0x01)
@@ -875,6 +892,64 @@ func DecodeMonsterCardUpgradeRequest(body []byte) (MonsterCardUpgradeRequest, er
 		MaterialCount: readI16(body, 3),
 		MaterialSlot:  readI16(body, 5),
 	}, nil
+}
+
+// DecodeMonsterCardSynthesisRequest accepts the observed op414 shapes. The
+// exact field order changed between client protocol revisions, so decoding
+// enumerates aligned i16 triples and lets the inventory transaction identify
+// which one is the binder and which two are monster cards.
+func DecodeMonsterCardSynthesisRequest(body []byte) (MonsterCardSynthesisRequest, error) {
+	if len(body) >= 7 && len(body) <= 13 && (len(body)-3)%2 == 0 {
+		cardSlots := make([]int16, 0, (len(body)-3)/2)
+		for offset := 3; offset+1 < len(body); offset += 2 {
+			slot := readI16(body, offset)
+			if slot < 0 {
+				return MonsterCardSynthesisRequest{}, fmt.Errorf(
+					"monster card synthesis body=%d has invalid card slot=%d",
+					len(body),
+					slot,
+				)
+			}
+			cardSlots = append(cardSlots, slot)
+		}
+		if len(cardSlots) < 2 || len(cardSlots) > 5 {
+			return MonsterCardSynthesisRequest{}, fmt.Errorf(
+				"monster card synthesis card count=%d want 2..5",
+				len(cardSlots),
+			)
+		}
+		candidate := MonsterCardSynthesisSlotCandidate{
+			BinderSlot: readI16(body, 0),
+			// The third byte is the number of selected cards, not the binder
+			// document type. It is 2/3/4/5 for the matching slot count. Infer
+			// the binder type from the authoritative runtime-PVF template.
+			BinderType: 0xff,
+			CardSlots:  cardSlots,
+			Layout:     fmt.Sprintf("binder-u16,count-u8,slots-u16x%d", len(cardSlots)),
+		}
+		if candidate.BinderSlot < 0 {
+			return MonsterCardSynthesisRequest{}, fmt.Errorf("monster card synthesis body=%d has invalid slots", len(body))
+		}
+		return MonsterCardSynthesisRequest{
+			Candidates: []MonsterCardSynthesisSlotCandidate{candidate},
+			RawBody:    append([]byte(nil), body...),
+		}, nil
+	}
+	if len(body) == 6 {
+		// Legacy 86JP shape: three i16 fields with the binder type inferred
+		// from the binder document.
+		candidate := MonsterCardSynthesisSlotCandidate{
+			BinderSlot: readI16(body, 0),
+			BinderType: 0xff,
+			CardSlots:  []int16{readI16(body, 2), readI16(body, 4)},
+			Layout:     "legacy-binder-u16,slots-u16x2",
+		}
+		return MonsterCardSynthesisRequest{
+			Candidates: []MonsterCardSynthesisSlotCandidate{candidate},
+			RawBody:    append([]byte(nil), body...),
+		}, nil
+	}
+	return MonsterCardSynthesisRequest{}, fmt.Errorf("monster card synthesis body=%d want 6 or 7/9/11/13", len(body))
 }
 
 func (r DeleteRequest) String() string {

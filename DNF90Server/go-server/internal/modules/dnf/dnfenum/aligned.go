@@ -128,6 +128,7 @@ var alignedCommands = map[CmdPacket]AlignedCommand{
 	CmdPacketUpgradeChronicle:         aligned(CmdPacketUpgradeChronicle, AlignedDomainInventory, AlignedSupportDirect, "current PVF op271 equipment level emancipation"),
 	CmdPacketEnchantByBead:            aligned(CmdPacketEnchantByBead, AlignedDomainInventory, AlignedSupportDirect, "宝珠附魔"),
 	CmdPacketUpgradeCard:              aligned(CmdPacketUpgradeCard, AlignedDomainInventory, AlignedSupportDirect, "current NoPack op603: u8 list + i16 target + i16 material-count + i16 material-slot; seven-byte result verified"),
+	CmdPacketMonstercardBind:          aligned(CmdPacketMonstercardBind, AlignedDomainInventory, AlignedSupportDirect, "current NoPack op414 card synthesis: observed 7/9-byte bodies; binder plus two monster cards; 19-byte class-1 result"),
 	CmdPacketPurifyItem:               aligned(CmdPacketPurifyItem, AlignedDomainInventory, AlignedSupportDirect, "装备净化/清除"),
 	CmdPacketInvestItemAmplifyOption:  aligned(CmdPacketInvestItemAmplifyOption, AlignedDomainInventory, AlignedSupportDirect, "装备增幅属性赋予/扭转/黄金书"),
 	CmdPacketUnsealRandomOption:       aligned(CmdPacketUnsealRandomOption, AlignedDomainInventory, AlignedSupportDirect, "魔法封印装备解除"),

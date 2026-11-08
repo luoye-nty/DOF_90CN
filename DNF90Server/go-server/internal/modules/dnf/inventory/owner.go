@@ -123,6 +123,7 @@ var (
 	ErrRepairNotRepairable                 = errors.New("inventory item is not repairable by PVF durability evidence")
 	ErrRepairGoldInsufficient              = errors.New("repair gold is insufficient")
 	ErrMonsterCardUpgradeResolverRequired  = errors.New("monster card upgrade requires a runtime-PVF resolver")
+	ErrMonsterCardSynthesisContract        = errors.New("monster card synthesis contract is invalid")
 )
 
 // op80 error codes. The current EXE's class-1 handler sub_1D2F410 takes the

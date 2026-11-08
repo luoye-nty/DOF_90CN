@@ -14,6 +14,7 @@ func TestLookupAlignedCommandDirectDomains(t *testing.T) {
 		{name: "inventory event level up", opcode: CmdPacketRequestEventServerLevelUp, domain: AlignedDomainInventory, support: AlignedSupportDirect},
 		{name: "inventory shared effect item", opcode: CmdPacketUseSharedEffectItem, domain: AlignedDomainInventory, support: AlignedSupportDirect},
 		{name: "inventory weapon forging", opcode: CmdPacketUpgradeItemSeparate, domain: AlignedDomainInventory, support: AlignedSupportDirect},
+		{name: "inventory monster card synthesis", opcode: CmdPacketMonstercardBind, domain: AlignedDomainInventory, support: AlignedSupportDirect},
 		// 扩容券：现场 2026-10-03 客户端发了 op430/op408，服务端当时没有路由所以
 		// 一条回包都没发（"使用后没效果"）。
 		{name: "inventory container upgrade (bag voucher)", opcode: CmdPacketUpgradeInventory, domain: AlignedDomainInventory, support: AlignedSupportDirect},

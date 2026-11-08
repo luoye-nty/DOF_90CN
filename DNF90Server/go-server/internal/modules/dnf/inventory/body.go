@@ -626,6 +626,34 @@ func buildMonsterCardUpgradeErrorAck(errorCode byte) []byte {
 	return []byte{0, errorCode}
 }
 
+// buildMonsterCardSynthesisSuccessAck matches the retained client reader at
+// DNF.exe+0x00C0B840:
+// success u8, binder slot u16, input count u8, input slots u16[],
+// output count u8, {slot u16,item id u32,count u32}[], open-result u8.
+func buildMonsterCardSynthesisSuccessAck(result MonsterCardSynthesisResult) []byte {
+	var writer packetWriter
+	writer.writeByte(1)
+	writer.writeUint16(uint16(result.BinderSlot))
+	inputSlots := result.InputSlots
+	if len(inputSlots) == 0 {
+		inputSlots = []int16{result.FirstSlot, result.SecondSlot}
+	}
+	writer.writeByte(byte(len(inputSlots)))
+	for _, slot := range inputSlots {
+		writer.writeUint16(uint16(slot))
+	}
+	writer.writeByte(1)
+	writer.writeUint16(uint16(result.ResultSlot))
+	writer.writeUint32(uint32(result.ResultItemID))
+	writer.writeUint32(1)
+	writer.writeByte(1)
+	return writer.bytes()
+}
+
+func buildMonsterCardSynthesisErrorAck(errorCode byte) []byte {
+	return []byte{0, errorCode}
+}
+
 func upgradeModeByte(mode string) byte {
 	if strings.EqualFold(strings.TrimSpace(mode), "amplify") {
 		return 1
