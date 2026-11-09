@@ -285,6 +285,7 @@ function Show-ConfigurationHelp {
     Write-Host "  源码: DNF90Server\client-patch\_op205gate_build\90CN.vcxproj"
     Write-Host "  配置: Release / Win32"
     Write-Host "  充值页: 客户端根目录 90CN.ini 的 [web] shop_url 覆盖源码默认地址"
+    Write-Host "  每日公告: 客户端根目录 90CN.ini 的 [web] daily_notice_url"
     Write-Host "==========================================================" -ForegroundColor Cyan
     Write-Host ""
 }

@@ -438,12 +438,14 @@ DNF90运维工具\internal\launcherver\DNF90Ops.build.json
 ```ini
 [web]
 shop_url=https://你的商城或充值页面
+daily_notice_url=http://你的每日公告页面/index.html
 ```
 
 规则：
 
 - 文件放在客户端根目录，与 `DNF.exe` 同级。
 - 点券充值和黑钻会员当前共用这个地址。
+- 每日首次登录及跨天公告使用 `daily_notice_url`，与商城地址相互独立。
 - 文件不存在、值无效或为空时，使用 `90CN.cpp` 中的编译默认地址。
 - 修改后需要完全重启游戏。
 

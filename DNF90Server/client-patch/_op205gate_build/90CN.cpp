@@ -79,9 +79,12 @@ constexpr unsigned long kResidentChannelID = 11;  // was DNF_RESIDENT_CHANNEL_ID
 // 地址可被客户端目录下的 90CN.ini 覆盖，不改就能重编改默认值：
 //     [web]
 //     shop_url=https://你的地址
+//     daily_notice_url=http://你的每日公告页面
 constexpr bool kShopWebRedirectEnabled = true;   // 总开关
 constexpr bool kShopWebHookAwesomium = true;     // 同时钩内嵌浏览器的 URL 构造
 constexpr wchar_t kShopWebUrlDefault[] = L"https://68n.cn/R9oOj";
+constexpr wchar_t kDailyNoticeUrlDefault[] =
+    L"http://stardance.top:18030/data/dof_web/90cn/web/index.html";
 // NOTE: remote authentication (the LANA challenge) is deliberately NOT a constant.
 // Its three inputs are runtime values that the launcher passes to this game process
 // (DNF_REMOTE_AUTH_TICKET / _HOST / _PORTS). The ticket is issued per login by the
@@ -13316,6 +13319,8 @@ bool InstallTownEntrySceneAccessorNullGuard()
 // ════════════════════════════════════════════════════════════════════════════
 wchar_t g_shopWebUrl[512] = { 0 };
 char g_shopWebUrlAnsi[512] = { 0 };
+wchar_t g_dailyNoticeUrl[512] = { 0 };
+char g_dailyNoticeUrlAnsi[512] = { 0 };
 bool g_shopWebUrlLoaded = false;
 
 void ToNarrowUtf8(const wchar_t* wide, char* out, size_t outSize)
@@ -13327,12 +13332,13 @@ void ToNarrowUtf8(const wchar_t* wide, char* out, size_t outSize)
     out[outSize - 1] = '\0';
 }
 
-// 读取 90CN.ini（客户端目录）里的 [web] shop_url，缺省用编译期常量。
+// 读取 90CN.ini（客户端目录）里的 [web] shop_url / daily_notice_url。
 void LoadShopWebUrl()
 {
     if (g_shopWebUrlLoaded) return;
     g_shopWebUrlLoaded = true;
     wcsncpy_s(g_shopWebUrl, kShopWebUrlDefault, _TRUNCATE);
+    wcsncpy_s(g_dailyNoticeUrl, kDailyNoticeUrlDefault, _TRUNCATE);
 
     wchar_t exePath[MAX_PATH] = { 0 };
     if (GetModuleFileNameW(nullptr, exePath, MAX_PATH) != 0) {
@@ -13346,11 +13352,36 @@ void LoadShopWebUrl()
                 GetPrivateProfileStringW(L"web", L"shop_url", kShopWebUrlDefault,
                     buffer, 511, iniPath);
                 if (buffer[0]) wcsncpy_s(g_shopWebUrl, buffer, _TRUNCATE);
+
+                wchar_t dailyBuffer[512] = { 0 };
+                GetPrivateProfileStringW(L"web", L"daily_notice_url",
+                    kDailyNoticeUrlDefault, dailyBuffer, 511, iniPath);
+                if (dailyBuffer[0]) {
+                    wcsncpy_s(g_dailyNoticeUrl, dailyBuffer, _TRUNCATE);
+                }
             }
         }
     }
     ToNarrowUtf8(g_shopWebUrl, g_shopWebUrlAnsi, sizeof(g_shopWebUrlAnsi));
+    ToNarrowUtf8(g_dailyNoticeUrl, g_dailyNoticeUrlAnsi,
+        sizeof(g_dailyNoticeUrlAnsi));
     LogLine("shop-web: url=%s", g_shopWebUrlAnsi);
+    LogLine("daily-notice: url=%s", g_dailyNoticeUrlAnsi);
+}
+
+// 官方每日登录弹窗固定构造 client/includeImg.htm；它必须先于通用 qq.com
+// 商城规则识别，否则会被商城/充值地址覆盖。
+bool IsDailyNoticeUrlAnsi(const char* url)
+{
+    if (!url || !*url) return false;
+
+    char lower[1024] = { 0 };
+    size_t length = strlen(url);
+    if (length > sizeof(lower) - 1) length = sizeof(lower) - 1;
+    for (size_t i = 0; i < length; ++i) {
+        lower[i] = static_cast<char>(tolower(static_cast<unsigned char>(url[i])));
+    }
+    return strstr(lower, "includeimg.htm") != nullptr;
 }
 
 // 我们要换掉哪些网页地址：
@@ -13560,6 +13591,13 @@ BOOL WINAPI ProxyShopCreateProcessW(LPCWSTR application, LPWSTR commandLine,
 // 默认原样透传，只在字符串是"要被换掉的网页地址"时改成我们的地址。
 void* __cdecl ProxyShopWebStringFromUtf8(void* result, const char* utf8, unsigned int length)
 {
+    if (utf8 && length && IsDailyNoticeUrlAnsi(utf8)) {
+        LogLine("daily-notice: WebString.CreateFromUTF8 redirect from=%.200s", utf8);
+        if (g_realShopWebStringFromUtf8) {
+            return g_realShopWebStringFromUtf8(result, g_dailyNoticeUrlAnsi,
+                static_cast<unsigned int>(strlen(g_dailyNoticeUrlAnsi)));
+        }
+    }
     if (utf8 && length && ShopWebUrlShouldRedirectAnsi(utf8)) {
         LogLine("shop-web: WebString.CreateFromUTF8 redirect from=%.200s", utf8);
         if (g_realShopWebStringFromUtf8) {
