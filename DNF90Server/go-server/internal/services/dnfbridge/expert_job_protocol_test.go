@@ -102,6 +102,28 @@ func TestCurrentExpertJobStoreLayoutsMatch86JPReaders(t *testing.T) {
 	if got := buildCurrentExpertJobStoreCreateNotification(store); !bytes.Equal(got, wantCreate) {
 		t.Fatalf("create notification=%x want=%x", got, wantCreate)
 	}
+	disjointStore := &currentExpertJobStore{
+		OwnerCharacterID: 19,
+		Kind:             currentExpertJobDisjointStoreKind,
+		Name:             []byte("disjoint"),
+		Cost:             500,
+		TownID:           38,
+		AreaID:           2,
+		PositionX:        120,
+		PositionY:        220,
+		MachineGrade:     11,
+		Endurance:        700,
+	}
+	disjointCreate := buildCurrentExpertJobStoreCreateNotification(disjointStore)
+	if len(disjointCreate) < 12 {
+		t.Fatalf("disjoint create notification is truncated: %x", disjointCreate)
+	}
+	gradeTrailer := disjointCreate[len(disjointCreate)-12:]
+	if binary.LittleEndian.Uint32(gradeTrailer[:4]) != currentExpertJobStoreGradeTrailerMagic ||
+		binary.LittleEndian.Uint32(gradeTrailer[4:8]) != 11 ||
+		binary.LittleEndian.Uint32(gradeTrailer[8:12]) != 700 {
+		t.Fatalf("disjoint create grade trailer=%x", gradeTrailer)
+	}
 	wantUpdate := []byte{3, 19, 0, 3, 0, 0, 0, 'a', 'b', 'c', 2, 0, 1}
 	if got := buildCurrentExpertJobStoreUpdateNotification(store); !bytes.Equal(got, wantUpdate) {
 		t.Fatalf("update notification=%x want=%x", got, wantUpdate)

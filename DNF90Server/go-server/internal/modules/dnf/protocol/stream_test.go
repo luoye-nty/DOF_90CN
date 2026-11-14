@@ -58,6 +58,21 @@ func TestSplitLatestGameStreamClassifiesKillRoomControlAsUpper(t *testing.T) {
 	}
 }
 
+func TestSplitLatestGameStreamClassifiesLocationHotkeyAsUpper(t *testing.T) {
+	body := []byte("LOC1\x01\x00\x01\x00")
+	packet, err := BuildChannelPacket(1456, body, 11, DefaultChannelClassification)
+	if err != nil {
+		t.Fatalf("build packet: %v", err)
+	}
+	packets, remaining, _, err := SplitLatestGameStream(packet, 4096)
+	if err != nil {
+		t.Fatalf("split stream: %v", err)
+	}
+	if len(remaining) != 0 || len(packets) != 1 || packets[0].Kind != LatestGameStreamUpper {
+		t.Fatalf("packets=%d remaining=%d kind=%d", len(packets), len(remaining), packets[0].Kind)
+	}
+}
+
 // Other 1456 bodies (including 90CN's ACK1 capability bitmap and BMU1 boss
 // mutation) intentionally keep their previous legacy classification.
 func TestSplitLatestGameStreamKeepsForeign1456OffTheUpperPath(t *testing.T) {

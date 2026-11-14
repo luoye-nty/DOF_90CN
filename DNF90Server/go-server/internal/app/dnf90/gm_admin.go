@@ -132,7 +132,7 @@ func registerDNFGKickRoutes(env *appkit.Env, bridge *dnfbridge.Service) {
 			return
 		}
 		var request struct {
-			BanType string `json:"ban_type"`
+			BanType  string `json:"ban_type"`
 			BanValue string `json:"ban_value"`
 		}
 		if !decodeGMRequest(w, r, &request, 16<<10) {

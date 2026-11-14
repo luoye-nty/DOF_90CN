@@ -689,3 +689,177 @@ func (c *gmClient) kickSessions(ctx context.Context, banType, banValue string) (
 func (c *gmClient) characterMailOptions(ctx context.Context, itemID string, values url.Values) (json.RawMessage, error) {
 	return c.itemMailOptions(ctx, itemID, values)
 }
+
+func (c *gmClient) robots(ctx context.Context) (json.RawMessage, error) {
+	reply, err := c.get(ctx, "/local/dnf-gm/robots")
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) robotReference(ctx context.Context) (json.RawMessage, error) {
+	reply, err := c.get(ctx, "/local/dnf-gm/robots/reference")
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) robotStatus(ctx context.Context) (json.RawMessage, error) {
+	reply, err := c.get(ctx, "/local/dnf-gm/robots/status")
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) robotOperations(ctx context.Context) (json.RawMessage, error) {
+	reply, err := c.get(ctx, "/local/dnf-gm/robots/operations")
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) robotAutomation(ctx context.Context) (json.RawMessage, error) {
+	reply, err := c.get(ctx, "/local/dnf-gm/robots/automation")
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) updateRobotAutomation(ctx context.Context, body any) (json.RawMessage, error) {
+	reply, err := c.post(ctx, "/local/dnf-gm/robots/automation", body)
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) updateRobotSpeech(ctx context.Context, body any) (json.RawMessage, error) {
+	reply, err := c.post(ctx, "/local/dnf-gm/robots/speech", body)
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) updateRobotProfile(ctx context.Context, body any) (json.RawMessage, error) {
+	reply, err := c.post(ctx, "/local/dnf-gm/robots/profile", body)
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) robotRecycle(ctx context.Context, id string) (json.RawMessage, error) {
+	values := url.Values{}
+	values.Set("id", strings.TrimSpace(id))
+	reply, err := c.get(ctx, "/local/dnf-gm/robots/recycle?"+values.Encode())
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) updateRobotRecycle(ctx context.Context, body any) (json.RawMessage, error) {
+	reply, err := c.post(ctx, "/local/dnf-gm/robots/recycle", body)
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) provisionRobots(ctx context.Context, body any) (json.RawMessage, error) {
+	reply, err := c.post(ctx, "/local/dnf-gm/robots/provision/batch", body)
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) startRobot(ctx context.Context, id string) (json.RawMessage, error) {
+	reply, err := c.post(ctx, "/local/dnf-gm/robots/start", map[string]any{"id": id})
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) stopRobot(ctx context.Context, id string) (json.RawMessage, error) {
+	reply, err := c.post(ctx, "/local/dnf-gm/robots/stop", map[string]any{"id": id})
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) relocateRobot(ctx context.Context, body any) (json.RawMessage, error) {
+	reply, err := c.post(ctx, "/local/dnf-gm/robots/relocate", body)
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) robotBatch(ctx context.Context, body any) (json.RawMessage, error) {
+	reply, err := c.post(ctx, "/local/dnf-gm/robots/batch", body)
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) openRobotExpertStore(ctx context.Context, id string, cost uint32) (json.RawMessage, error) {
+	reply, err := c.post(ctx, "/local/dnf-gm/robots/expert-store/open", map[string]any{
+		"id": id, "cost": cost,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) closeRobotExpertStore(ctx context.Context, id string) (json.RawMessage, error) {
+	reply, err := c.post(ctx, "/local/dnf-gm/robots/expert-store/close", map[string]any{"id": id})
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) setRobotExpertStoreCost(ctx context.Context, id string, cost uint32) (json.RawMessage, error) {
+	reply, err := c.post(ctx, "/local/dnf-gm/robots/expert-store/cost", map[string]any{
+		"id": id, "cost": cost,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) configureRobotPrivateStore(ctx context.Context, body any) (json.RawMessage, error) {
+	reply, err := c.post(ctx, "/local/dnf-gm/robots/private-store/config", body)
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) openRobotPrivateStore(ctx context.Context, body any) (json.RawMessage, error) {
+	reply, err := c.post(ctx, "/local/dnf-gm/robots/store/open", body)
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}
+
+func (c *gmClient) closeRobotPrivateStore(ctx context.Context, id string) (json.RawMessage, error) {
+	reply, err := c.post(ctx, "/local/dnf-gm/robots/store/close", map[string]any{"id": id})
+	if err != nil {
+		return nil, err
+	}
+	return reply.Data, nil
+}

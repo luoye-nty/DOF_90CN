@@ -355,14 +355,15 @@ func isKnownClientUpperMsg(msgID uint16, body []byte) bool {
 		return bodyLen == 0
 	case 1456:
 		// 90CN 的私有控制通道复用 CmdPacket 枚举里刻意留空的 1456。
-		// 这里只接管 "KRM1"（测试用秒杀当前房间）：13 字节 channel 包头 +
+		// 这里接管 "KRM1"（测试用秒杀当前房间）和 "LOC1"（位置查询）：
+		// 13 字节 channel 包头 +
 		// 明文 body，但 opcode 不在原生白名单里，不拦截的话
 		// splitLegacyGamePacket 会按 legacy cmd=1 把它切走，包永远到不了
 		// handleGameUpper（实测：客户端已发包，服务端零日志）。
 		//
 		// "ACK1"（能力位图）和 "BMU1"（Boss 变异）刻意维持原有行为不动：
 		// 它们一直走 legacy 分支，突然接通会改变线上未实现命令的失败回包。
-		return isCurrentKillRoomUpperBody(body)
+		return isCurrentKillRoomUpperBody(body) || isCurrentLocationHotkeyUpperBody(body)
 	case 1286:
 		return bodyLen == 16
 	case 1287:
@@ -383,6 +384,12 @@ func isKnownClientUpperMsg(msgID uint16, body []byte) bool {
 // 严格校验 magic 与长度，避免把同形状的 legacy 帧误切成 upper。
 func isCurrentKillRoomUpperBody(body []byte) bool {
 	return len(body) == 8 && string(body[:4]) == "KRM1"
+}
+
+// isCurrentLocationHotkeyUpperBody only admits the read-only location hotkey
+// envelope: u32 "LOC1" | u8 version | u8 reserved | u16 token.
+func isCurrentLocationHotkeyUpperBody(body []byte) bool {
+	return len(body) == 8 && string(body[:4]) == "LOC1"
 }
 
 func isCurrent90CNEndpointBody(body []byte) bool {

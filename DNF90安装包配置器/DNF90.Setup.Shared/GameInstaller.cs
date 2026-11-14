@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace DNF90.Setup.Shared;
@@ -23,30 +22,29 @@ public static class GameInstaller
         {
             cancellationToken.ThrowIfCancellationRequested();
             progress?.Report(new InstallProgress(
-                "正在校验 " + package.DisplayName,
+                "正在读取 " + package.DisplayName,
                 package.FileName,
                 installedBytes * 100.0 / totalBytes));
 
             await using var packageStream = payload.OpenPackageStream(package);
-            var hash = Convert.ToHexString(
-                await SHA256.HashDataAsync(packageStream, cancellationToken).ConfigureAwait(false));
-            if (!string.Equals(hash, package.Sha256, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidDataException("安装分卷校验失败：" + package.FileName);
-            }
-            packageStream.Position = 0;
-
             using var archive = new ZipArchive(packageStream, ZipArchiveMode.Read, leaveOpen: true);
-            foreach (var entry in archive.Entries)
+            var decodedEntryNames = ZipEntryFilenameDecoder.Read(
+                packageStream,
+                archive.Entries.Count);
+            for (var entryIndex = 0; entryIndex < archive.Entries.Count; entryIndex++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (string.IsNullOrWhiteSpace(entry.FullName) ||
-                    entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\'))
+                var entry = archive.Entries[entryIndex];
+                var decodedEntryName = entryIndex < decodedEntryNames.Count
+                    ? decodedEntryNames[entryIndex]
+                    : entry.FullName;
+                if (string.IsNullOrWhiteSpace(decodedEntryName) ||
+                    decodedEntryName.EndsWith('/') || decodedEntryName.EndsWith('\\'))
                 {
                     continue;
                 }
 
-                var entryName = entry.FullName.Replace('\\', '/');
+                var entryName = decodedEntryName.Replace('\\', '/');
                 var destinationPath = SafePath.CombineArchivePath(root, entryName);
                 if (destinationPath is null)
                 {

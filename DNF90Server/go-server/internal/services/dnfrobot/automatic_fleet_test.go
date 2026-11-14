@@ -59,66 +59,43 @@ func (e *automaticFleetTestEndpoint) EnsureAutomaticRobotProfile(ctx context.Con
 	}, nil
 }
 
-func TestManagerAutomaticallyEnsuresFiveHundredPersistentProfilesWithoutDuplicates(t *testing.T) {
+func TestManagerStartDoesNotAutomaticallyProvisionLegacyFleet(t *testing.T) {
 	runtime := dnfmemory.NewRuntime()
 	group := runtime.Group()
 	endpoint := &automaticFleetTestEndpoint{group: group}
 	provider := func() (dnfrepo.Group, bool) { return group, true }
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	startAndWait := func() *Manager {
-		manager := NewManager(logger, provider, endpoint, "fixture-secret")
-		manager.fleetProvisionDelay = 0
-		if err := manager.Start(context.Background()); err != nil {
-			t.Fatalf("Start: %v", err)
-		}
-		deadline := time.Now().Add(5 * time.Second)
-		for len(manager.List()) != AutomaticFleetTarget {
-			if time.Now().After(deadline) {
-				t.Fatalf("automatic fleet size = %d, want %d", len(manager.List()), AutomaticFleetTarget)
-			}
-			time.Sleep(time.Millisecond)
-		}
-		return manager
+	manager := NewManager(logger, provider, endpoint, "fixture-secret")
+	if err := manager.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
 	}
-
-	first := startAndWait()
-	policy := first.Automation()
-	if !policy.Enabled || policy.TargetOnline != AutomaticFleetOnlineTarget || policy.ScaleUpBatch != 2 || policy.StoreConcurrent != 2 ||
-		policy.StoreMaximumRows != 8 || policy.MegaphoneProfileModulo != 50 || len(policy.ChatMessages) == 0 {
-		t.Fatalf("default automatic policy = %+v", policy)
+	time.Sleep(50 * time.Millisecond)
+	if got := len(manager.List()); got != 0 {
+		t.Fatalf("startup created %d automatic profiles, want 0", got)
 	}
-	for _, snapshot := range first.List() {
-		if snapshot.Profile.AutoStart {
-			t.Fatalf("automatic snapshot = %+v", snapshot)
-		}
+	policy := manager.Automation()
+	if policy.Enabled || policy.TargetOnline != 0 {
+		t.Fatalf("startup automation = %+v, want disabled with target 0", policy)
 	}
 	stopCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	if err := first.Stop(stopCtx); err != nil {
-		cancel()
-		t.Fatalf("first Stop: %v", err)
-	}
-	cancel()
-
-	second := startAndWait()
-	stopCtx, cancel = context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if err := second.Stop(stopCtx); err != nil {
-		t.Fatalf("second Stop: %v", err)
+	if err := manager.Stop(stopCtx); err != nil {
+		t.Fatalf("Stop: %v", err)
 	}
 	endpoint.mu.Lock()
 	created := endpoint.created
 	gatewayChecks := endpoint.gatewayChecks
 	endpoint.mu.Unlock()
-	if created != AutomaticFleetTarget {
-		t.Fatalf("native characters created = %d, want exactly %d across two starts", created, AutomaticFleetTarget)
+	if created != 0 {
+		t.Fatalf("native characters created = %d, want 0", created)
 	}
-	if gatewayChecks != 2 {
-		t.Fatalf("gateway stability checks = %d, want one before each manager start", gatewayChecks)
+	if gatewayChecks != 0 {
+		t.Fatalf("gateway stability checks = %d, want 0", gatewayChecks)
 	}
 	config, err := dnfrobotdomain.NewOwner(provider).Load(context.Background())
-	if err != nil || len(config.Profiles) != AutomaticFleetTarget || config.AutomaticFleetVersion != automaticFleetConfigVersion {
-		t.Fatalf("persisted automatic config = %d profiles, err=%v", len(config.Profiles), err)
+	if err != nil || len(config.Profiles) != 0 {
+		t.Fatalf("persisted manual config = %d profiles, err=%v", len(config.Profiles), err)
 	}
 }
 

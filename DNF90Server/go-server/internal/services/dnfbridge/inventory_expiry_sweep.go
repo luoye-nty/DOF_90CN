@@ -8,7 +8,8 @@ import (
 	dnfrepo "longheng.io/server/internal/modules/dnf/repository"
 )
 
-// sweepExpiredInventoryItems 删除角色背包/仓库与账号仓库里已经过期的道具。
+// sweepExpiredInventoryItems 删除角色背包/仓库、账号仓库和穿戴装备里
+// 已经过期的道具。穿戴装备同时覆盖时装、名称牌等非背包格子。
 //
 // 客户端只会把过期道具画成"已超过使用期限"的灰标，服务端此前从不删除，
 // 于是它们永久占着格子（stack_limit=1 的道具还会挡住新获得的同名道具）。
@@ -53,9 +54,27 @@ func (s *Service) sweepExpiredInventoryItems(session *gameSession, source string
 			}
 		}
 	}
+	equipmentRemoved, nameTagCleared, equipmentErr := sweepExpiredEquipmentRecord(
+		ctx,
+		repos.Character,
+		repos.Equipment,
+		characterID,
+		now,
+	)
+	if equipmentErr != nil {
+		s.logInfo("dnfbridge expired-equipment sweep failed",
+			"char_id", characterID, "error", equipmentErr)
+	}
+	if nameTagCleared {
+		s.logInfo("dnfbridge expired name-tag state cleared",
+			"char_id", characterID)
+	}
+	removed += equipmentRemoved
 	if removed > 0 {
 		s.logInfo("dnfbridge expired-item sweep removed items",
-			"conn_id", session.connID, "char_id", characterID, "source", source, "removed", removed)
+			"conn_id", session.connID, "char_id", characterID,
+			"source", source, "removed", removed,
+			"equipment_removed", equipmentRemoved)
 	}
 }
 
@@ -94,4 +113,59 @@ func dropExpiredStacks(slots map[string]dnfrepo.ItemStack, now time.Time) int {
 		}
 	}
 	return removed
+}
+
+func dropExpiredEquipmentEntries(entries map[string]dnfrepo.EquipmentEntry, now time.Time) int {
+	removed := 0
+	for key, entry := range entries {
+		expireUnix := currentItemListEquipmentExpire(entry)
+		if expireUnix != 0 && int64(expireUnix) <= now.Unix() {
+			delete(entries, key)
+			removed++
+		}
+	}
+	return removed
+}
+
+// sweepExpiredEquipmentRecord removes expired worn items, including avatar
+// costumes and the slot-30 name tag. Name-tag state lives in character.Stats,
+// so removing that worn row must clear the paired fields in the same sweep.
+func sweepExpiredEquipmentRecord(
+	ctx context.Context,
+	characters dnfrepo.CharacterRepository,
+	equipment dnfrepo.EquipmentRepository,
+	characterID string,
+	now time.Time,
+) (int, bool, error) {
+	if equipment == nil || characterID == "" {
+		return 0, false, nil
+	}
+	removed := 0
+	if record, found, err := equipment.Load(ctx, characterID); err != nil {
+		return 0, false, err
+	} else if found {
+		if n := dropExpiredEquipmentEntries(record.Entries, now); n > 0 {
+			if saveErr := equipment.Save(ctx, record); saveErr != nil {
+				return 0, false, saveErr
+			}
+			removed = n
+		}
+	}
+
+	nameTagCleared := false
+	if characters != nil {
+		character, found, err := characters.Load(ctx, characterID)
+		if err != nil {
+			return removed, false, err
+		}
+		if found && cleanupExpiredNameTagStateAt(&character, now) {
+			if saveErr := dnfrepo.SaveCharacterFields(
+				ctx, characters, character, dnfrepo.CharacterFieldStats,
+			); saveErr != nil {
+				return removed, false, saveErr
+			}
+			nameTagCleared = true
+		}
+	}
+	return removed, nameTagCleared, nil
 }

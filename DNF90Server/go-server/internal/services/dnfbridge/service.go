@@ -247,6 +247,8 @@ type Service struct {
 	robotSessionSecret       []byte
 	robotSessionReplayMu     sync.Mutex
 	robotSessionReplays      map[[32]byte]time.Time
+	robotRecycle             RobotRecycleHooks
+	robotRecycleRollFn       func(limit int) (int, error)
 	// characterCreateMu serializes the name/slot/numeric-ID reservation shared
 	// by native character creation and loopback GM robot provisioning. The
 	// repository creation transaction makes one aggregate atomic, but the
@@ -308,6 +310,7 @@ type Service struct {
 	expertJobMu                           sync.Mutex
 	expertJobCatalog                      *dnfexpertjob.Catalog
 	expertJobCatalogLoadErr               error
+	robotExpertJobCatalogOverride         robotExpertJobCatalog
 	petCatalogMu                          sync.Mutex
 	petCatalog                            *dnfpet.PVFCatalog
 	petCatalogLoadErr                     error
@@ -458,6 +461,7 @@ type ServiceOptions struct {
 	// RobotSessionSecret authenticates the private-LAN dofrobot adapter. The
 	// value is process-only: it must never be logged or persisted by bridge.
 	RobotSessionSecret string
+	RobotRecycleHooks  RobotRecycleHooks
 }
 
 // New 使用框架环境创建 DNF bridge 服务。
@@ -497,6 +501,7 @@ func NewWithOptions(env *appkit.Env, serviceOptions ServiceOptions) *Service {
 		runtimePartyManager:     party.NewRuntimePartyManager(),
 		robotSessionSecret:      []byte(strings.TrimSpace(serviceOptions.RobotSessionSecret)),
 		robotSessionReplays:     make(map[[32]byte]time.Time),
+		robotRecycle:            serviceOptions.RobotRecycleHooks,
 	}
 	service.localDebugStrikeOnSkillUse = service.localDebugMode && serviceOptions.LocalDebugStrikeOnSkillUse
 	service.launcherAuthHTTPClient = newLauncherAuthVerifyClient(service.options)

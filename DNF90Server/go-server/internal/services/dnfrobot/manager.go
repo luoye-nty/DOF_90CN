@@ -24,8 +24,27 @@ type EndpointProvider interface {
 	RobotGameEndpoint(channelID int) (string, error)
 }
 
+type ExpertMachineState struct {
+	Kind         string
+	Grade        int
+	Endurance    int64
+	MaxEndurance int64
+}
+
+// ExpertMachineMaintenance is implemented by the production bridge. The
+// manager uses it to inspect server-owned machine endurance and restore it
+// while the robot is offline.
+type ExpertMachineMaintenance interface {
+	RobotExpertMachineState(ctx context.Context, accountID string, characterID uint16) (ExpertMachineState, error)
+	RestoreRobotExpertMachine(ctx context.Context, accountID string, characterID uint16) (ExpertMachineState, error)
+}
+
 type PrivateStorePlanner interface {
 	RobotPrivateStoreRows(ctx context.Context, characterID uint16, maximumRows int, unitPrice uint32) ([]PrivateStoreRow, error)
+}
+
+type ConfiguredPrivateStorePlanner interface {
+	PrepareRobotPrivateStoreRows(ctx context.Context, accountID string, characterID uint16, items []dnfrobotdomain.PrivateStoreItem) ([]PrivateStoreRow, error)
 }
 
 // PrivateStoreStocker may replenish a robot through the server's authoritative
@@ -50,52 +69,76 @@ type AutomaticFleetGatewayStability interface {
 }
 
 type RuntimeSnapshot struct {
-	Profile          dnfrobotdomain.Profile `json:"profile"`
-	Running          bool                   `json:"running"`
-	State            State                  `json:"state"`
-	Endpoint         string                 `json:"endpoint,omitempty"`
-	StartedAt        time.Time              `json:"started_at,omitempty"`
-	ReadyAt          time.Time              `json:"ready_at,omitempty"`
-	StateSince       time.Time              `json:"state_since,omitempty"`
-	LastReceive      time.Time              `json:"last_receive_at,omitempty"`
-	LastSend         time.Time              `json:"last_send_at,omitempty"`
-	Reconnects       int                    `json:"reconnects"`
-	LastError        string                 `json:"last_error,omitempty"`
-	CharacterID      uint16                 `json:"selected_character_id,omitempty"`
-	Slot             uint8                  `json:"selected_slot,omitempty"`
-	Village          uint8                  `json:"village"`
-	Area             uint8                  `json:"area"`
-	X                uint16                 `json:"x"`
-	Y                uint16                 `json:"y"`
-	SchedulerManaged bool                   `json:"scheduler_managed,omitempty"`
-	Personality      string                 `json:"personality,omitempty"`
-	LastAction       string                 `json:"last_action,omitempty"`
+	Profile           dnfrobotdomain.Profile `json:"profile"`
+	Running           bool                   `json:"running"`
+	State             State                  `json:"state"`
+	Endpoint          string                 `json:"endpoint,omitempty"`
+	StartedAt         time.Time              `json:"started_at,omitempty"`
+	ReadyAt           time.Time              `json:"ready_at,omitempty"`
+	StateSince        time.Time              `json:"state_since,omitempty"`
+	LastReceive       time.Time              `json:"last_receive_at,omitempty"`
+	LastSend          time.Time              `json:"last_send_at,omitempty"`
+	Reconnects        int                    `json:"reconnects"`
+	LastError         string                 `json:"last_error,omitempty"`
+	CharacterID       uint16                 `json:"selected_character_id,omitempty"`
+	Slot              uint8                  `json:"selected_slot,omitempty"`
+	Village           uint8                  `json:"village"`
+	Area              uint8                  `json:"area"`
+	X                 uint16                 `json:"x"`
+	Y                 uint16                 `json:"y"`
+	SchedulerManaged  bool                   `json:"scheduler_managed,omitempty"`
+	Personality       string                 `json:"personality,omitempty"`
+	LastAction        string                 `json:"last_action,omitempty"`
+	StoreKind         string                 `json:"store_kind,omitempty"`
+	StoreActive       bool                   `json:"store_active"`
+	ExpertStoreActive bool                   `json:"expert_store_active"`
+	RecycleActive     bool                   `json:"recycle_active,omitempty"`
+}
+
+// PlacementBounds is the authored movable rectangle that contains an
+// operator-requested robot position. An unset value intentionally removes any
+// previously stored bounds.
+type PlacementBounds struct {
+	Set  bool
+	MinX uint16
+	MaxX uint16
+	MinY uint16
+	MaxY uint16
 }
 
 type profileRuntime struct {
-	mu               sync.RWMutex
-	profile          dnfrobotdomain.Profile
-	client           *Client
-	cancel           context.CancelFunc
-	done             chan struct{}
-	startedAt        time.Time
-	reconnects       int
-	lastError        string
-	nextMove         time.Time
-	nextChat         time.Time
-	nextMegaphone    time.Time
-	nextStore        time.Time
-	storeClose       time.Time
-	moveCursor       int
-	chatCursor       int
-	megaphoneCursor  int
-	storeCursor      int
-	autoStore        bool
-	storeRetryAt     time.Time
-	schedulerManaged bool
-	behaviorSeed     uint64
-	personality      string
-	lastAction       string
+	mu                        sync.RWMutex
+	profile                   dnfrobotdomain.Profile
+	client                    *Client
+	cancel                    context.CancelFunc
+	done                      chan struct{}
+	startedAt                 time.Time
+	reconnects                int
+	lastError                 string
+	nextMove                  time.Time
+	nextChat                  time.Time
+	nextMegaphone             time.Time
+	nextStore                 time.Time
+	storeClose                time.Time
+	moveCursor                int
+	chatCursor                int
+	megaphoneCursor           int
+	storeCursor               int
+	autoStore                 bool
+	storeRetryAt              time.Time
+	nextExpertCheck           time.Time
+	expertStoreCost           uint32
+	expertRecovering          bool
+	expertAutoOpenAttempted   bool
+	nextExpertAutoOpenCheck   time.Time
+	personalAutoOpenAttempted bool
+	nextPersonalAutoOpenCheck time.Time
+	privateStoreTransition    bool
+	recycleActive             bool
+	schedulerManaged          bool
+	behaviorSeed              uint64
+	personality               string
+	lastAction                string
 }
 
 type Manager struct {
@@ -154,32 +197,9 @@ func (m *Manager) Start(ctx context.Context) error {
 	_, automaticFleet := m.endpoint.(AutomaticFleetProvider)
 	if automaticFleet {
 		configChanged := false
-		if config.AutomaticFleetVersion < automaticFleetConfigVersion && config.AutomaticFleetVersion == 0 {
-			config.Automation = DefaultAutomaticFleetPolicy()
-			configChanged = true
-		} else if config.AutomaticFleetVersion < automaticFleetConfigVersion {
-			// Fleet migrations deliberately replace every earlier fleet-wide
-			// burst setting. Existing databases may have persisted 100 direct
-			// autostarts or 5/10-session batches before startup backpressure and
-			// bounded town placement were introduced; preserving those values
-			// would recreate either incident.
-			config.Automation.TargetOnline = AutomaticFleetOnlineTarget
-			config.Automation.ScaleIntervalSeconds = 5
-			config.Automation.ScaleUpBatch = 2
-			config.Automation.ScaleDownBatch = 2
-			config.Automation.StoreConcurrent = 2
-			if config.Automation.MegaphoneIntervalMinSeconds == 0 && config.Automation.MegaphoneIntervalMaxSeconds == 0 {
-				config.Automation.MegaphoneIntervalMinSeconds = 900
-				config.Automation.MegaphoneIntervalMaxSeconds = 1800
-				config.Automation.MegaphoneProfileModulo = 50
-			}
-			configChanged = true
-		}
-		// The automatic fleet owns 500 persistent identities, but the current
-		// game/database path is only proven for a bounded live actor pool. Keep
-		// this invariant even when a current-version configuration was edited by
-		// an older GM tool or restored from a database captured during the
-		// reconnect-storm incident.
+		// Robot identities are now created explicitly from the GM console. Keep
+		// the legacy online cap for existing installations, but never provision or
+		// auto-start the old 500-identity fleet during manager startup.
 		if config.Automation.TargetOnline > AutomaticFleetOnlineTarget {
 			config.Automation.TargetOnline = AutomaticFleetOnlineTarget
 			configChanged = true
@@ -190,16 +210,16 @@ func (m *Manager) Start(ctx context.Context) error {
 				configChanged = true
 			}
 		}
-		if config.AutomaticFleetVersion < automaticFleetConfigVersion {
-			config.AutomaticFleetVersion = automaticFleetConfigVersion
-			configChanged = true
-		}
 		if configChanged {
 			config, err = m.owner.Save(ctx, config)
 			if err != nil {
 				return fmt.Errorf("save default dnf robot automation: %w", err)
 			}
 		}
+	}
+	config, err = m.owner.Save(ctx, config)
+	if err != nil {
+		return fmt.Errorf("persist normalized dnf robot configuration: %w", err)
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	m.mu.Lock()
@@ -209,14 +229,13 @@ func (m *Manager) Start(ctx context.Context) error {
 		return ErrProfileRunning
 	}
 	m.ctx, m.cancel, m.config = runCtx, cancel, dnfrobotdomain.CloneConfig(config)
-	m.automaticFleetReady = !automaticFleet
+	// Automatic identity provisioning is no longer a background startup task.
+	// Treat scheduling as ready so existing/manual profiles still participate in
+	// target-online reconciliation.
+	m.automaticFleetReady = true
 	m.mu.Unlock()
 	m.wg.Add(1)
 	go m.runAutomation(runCtx)
-	if automaticFleet {
-		m.wg.Add(1)
-		go m.runAutomaticFleet(runCtx)
-	}
 	for _, profile := range config.Profiles {
 		if profile.AutoStart {
 			if _, err := m.StartProfile(profile.ID); err != nil {
@@ -257,8 +276,241 @@ func (m *Manager) UpdateAutomation(ctx context.Context, policy dnfrobotdomain.Au
 	}
 	m.mu.Lock()
 	m.config = saved
+	runtimes := make([]*profileRuntime, 0, len(m.running))
+	for _, runtime := range m.running {
+		runtimes = append(runtimes, runtime)
+	}
 	m.mu.Unlock()
+	for _, runtime := range runtimes {
+		runtime.mu.Lock()
+		if runtime.profile.ExpertStoreKind == "" {
+			runtime.nextMove = time.Time{}
+			runtime.nextChat = time.Time{}
+		}
+		runtime.mu.Unlock()
+	}
 	return m.Automation(), nil
+}
+
+type SpeechMode struct {
+	ID        string `json:"id"`
+	Megaphone bool   `json:"megaphone"`
+}
+
+// UpdateSpeechModes persists the per-robot choice between ordinary local chat
+// and server-megaphone announcements. Expert-store profiles keep the setting,
+// but their stall maintenance still takes precedence over ambient speech.
+func (m *Manager) UpdateSpeechModes(ctx context.Context, modes []SpeechMode) ([]RuntimeSnapshot, error) {
+	if m == nil {
+		return nil, ErrManagerStopped
+	}
+	if len(modes) == 0 || len(modes) > dnfrobotdomain.MaxProfiles {
+		return nil, fmt.Errorf("%w: invalid robot speech mode count", dnfrobotdomain.ErrInvalid)
+	}
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+	m.mu.RLock()
+	config := dnfrobotdomain.CloneConfig(m.config)
+	m.mu.RUnlock()
+	foundModes := make(map[string]SpeechMode, len(modes))
+	for _, mode := range modes {
+		key := profileKey(mode.ID)
+		if key == "" {
+			return nil, fmt.Errorf("%w: robot speech mode id is empty", dnfrobotdomain.ErrInvalid)
+		}
+		if _, duplicate := foundModes[key]; duplicate {
+			return nil, fmt.Errorf("%w: duplicate robot speech mode %q", dnfrobotdomain.ErrInvalid, mode.ID)
+		}
+		foundModes[key] = SpeechMode{ID: mode.ID, Megaphone: mode.Megaphone}
+	}
+	found := make(map[string]bool, len(foundModes))
+	for index := range config.Profiles {
+		key := profileKey(config.Profiles[index].ID)
+		mode, ok := foundModes[key]
+		if !ok {
+			continue
+		}
+		config.Profiles[index].MegaphoneEnabled = mode.Megaphone
+		if mode.Megaphone {
+			config.Profiles[index].SpeechMode = dnfrobotdomain.SpeechModeMegaphone
+		} else {
+			config.Profiles[index].SpeechMode = dnfrobotdomain.SpeechModeNormal
+		}
+		found[key] = true
+	}
+	for key := range foundModes {
+		if !found[key] {
+			return nil, fmt.Errorf("%w: robot profile %q was not found", ErrProfileNotFound, foundModes[key].ID)
+		}
+	}
+	saved, err := m.owner.Save(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	m.config = saved
+	runtimes := make(map[string]*profileRuntime, len(foundModes))
+	for key := range foundModes {
+		if runtime := m.running[key]; runtime != nil {
+			runtimes[key] = runtime
+		}
+	}
+	m.mu.Unlock()
+	for key, runtime := range runtimes {
+		runtime.mu.Lock()
+		runtime.profile, _ = findProfile(saved, key)
+		runtime.nextChat = time.Time{}
+		runtime.nextMegaphone = time.Time{}
+		runtime.mu.Unlock()
+	}
+	return m.List(), nil
+}
+
+func (m *Manager) RecyclePolicy() dnfrobotdomain.RecyclePolicy {
+	if m == nil {
+		return dnfrobotdomain.RecyclePolicy{}
+	}
+	m.mu.RLock()
+	policy := m.config.Recycle
+	m.mu.RUnlock()
+	policy.BuyItems = append([]dnfrobotdomain.RecycleBuyItem(nil), policy.BuyItems...)
+	return policy
+}
+
+func (m *Manager) UpdateRecyclePolicy(ctx context.Context, policy dnfrobotdomain.RecyclePolicy) (dnfrobotdomain.RecyclePolicy, error) {
+	if m == nil {
+		return dnfrobotdomain.RecyclePolicy{}, ErrManagerStopped
+	}
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+	m.mu.RLock()
+	config := dnfrobotdomain.CloneConfig(m.config)
+	m.mu.RUnlock()
+	config.Recycle = policy
+	saved, err := m.owner.Save(ctx, config)
+	if err != nil {
+		return dnfrobotdomain.RecyclePolicy{}, err
+	}
+	m.mu.Lock()
+	m.config = saved
+	m.mu.Unlock()
+	return m.RecyclePolicy(), nil
+}
+
+func (m *Manager) UpdateProfileRecyclePolicy(
+	ctx context.Context,
+	id string,
+	policy dnfrobotdomain.RecyclePolicy,
+) (RuntimeSnapshot, error) {
+	if m == nil {
+		return RuntimeSnapshot{}, ErrManagerStopped
+	}
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+	m.mu.RLock()
+	config := dnfrobotdomain.CloneConfig(m.config)
+	runtime := m.running[profileKey(id)]
+	m.mu.RUnlock()
+	found := false
+	for index := range config.Profiles {
+		if profileKey(config.Profiles[index].ID) != profileKey(id) {
+			continue
+		}
+		if config.Profiles[index].RobotType != dnfrobotdomain.RobotTypeNormal {
+			return RuntimeSnapshot{}, fmt.Errorf(
+				"%w: only normal robots can configure recycle trade",
+				dnfrobotdomain.ErrInvalid,
+			)
+		}
+		config.Profiles[index].Recycle = policy
+		found = true
+		break
+	}
+	if !found {
+		return RuntimeSnapshot{}, ErrProfileNotFound
+	}
+	saved, err := m.owner.Save(ctx, config)
+	if err != nil {
+		return RuntimeSnapshot{}, err
+	}
+	profile, _ := findProfile(saved, id)
+	m.mu.Lock()
+	m.config = saved
+	m.mu.Unlock()
+	if runtime != nil {
+		runtime.mu.Lock()
+		runtime.profile.Recycle = cloneRecyclePolicy(profile.Recycle)
+		runtime.mu.Unlock()
+	}
+	return snapshotRuntime(profile, runtime), nil
+}
+
+func cloneRecyclePolicy(policy dnfrobotdomain.RecyclePolicy) dnfrobotdomain.RecyclePolicy {
+	policy.BuyItems = append([]dnfrobotdomain.RecycleBuyItem(nil), policy.BuyItems...)
+	return policy
+}
+
+// BeginRecycle reserves an ambient, town-ready robot for one player trade.
+// Expert-store and private-store robots are deliberately excluded because a
+// second native interaction would compete with their store state machine.
+func (m *Manager) BeginRecycle(characterID uint16) (dnfrobotdomain.Profile, bool) {
+	if m == nil || characterID == 0 {
+		return dnfrobotdomain.Profile{}, false
+	}
+	m.mu.RLock()
+	runtimes := make([]*profileRuntime, 0, len(m.running))
+	for _, runtime := range m.running {
+		runtimes = append(runtimes, runtime)
+	}
+	m.mu.RUnlock()
+	for _, runtime := range runtimes {
+		runtime.mu.Lock()
+		client := runtime.client
+		profile := runtime.profile
+		eligible := client != nil && !runtime.recycleActive &&
+			profile.RobotType == dnfrobotdomain.RobotTypeNormal && profile.Recycle.Enabled
+		var state State
+		var storeActive, expertStoreActive bool
+		if eligible {
+			snapshot := client.Snapshot()
+			state = snapshot.State
+			storeActive = snapshot.StoreActive
+			expertStoreActive = snapshot.ExpertStoreActive
+		}
+		eligible = eligible && profile.CharacterID == characterID && state == StateTownReady &&
+			!storeActive && !expertStoreActive
+		if eligible {
+			runtime.recycleActive = true
+			runtime.nextMove = time.Time{}
+			runtime.nextChat = time.Time{}
+			runtime.nextMegaphone = time.Time{}
+			runtime.lastAction = "recycle_trade"
+		}
+		runtime.mu.Unlock()
+		if eligible {
+			return profile, true
+		}
+	}
+	return dnfrobotdomain.Profile{}, false
+}
+
+func (m *Manager) EndRecycle(id string) {
+	if m == nil {
+		return
+	}
+	m.mu.RLock()
+	runtime := m.running[profileKey(id)]
+	m.mu.RUnlock()
+	if runtime == nil {
+		return
+	}
+	runtime.mu.Lock()
+	if runtime.recycleActive {
+		runtime.recycleActive = false
+		runtime.nextMove = time.Time{}
+		runtime.nextChat = time.Time{}
+	}
+	runtime.mu.Unlock()
 }
 
 func (m *Manager) Stop(ctx context.Context) error {
@@ -340,6 +592,12 @@ func (m *Manager) Upsert(ctx context.Context, profile dnfrobotdomain.Profile) (R
 	found := false
 	for index := range config.Profiles {
 		if profileKey(config.Profiles[index].ID) == profileKey(profile.ID) {
+			if config.Profiles[index].RobotType != profile.RobotType {
+				return RuntimeSnapshot{}, fmt.Errorf(
+					"%w: robot type is immutable after creation",
+					dnfrobotdomain.ErrInvalid,
+				)
+			}
 			config.Profiles[index], found = profile, true
 			break
 		}
@@ -460,6 +718,141 @@ func (m *Manager) Move(id string, village, area uint8, x, y uint16, moveType uin
 	return client.Move(village, area, x, y, moveType)
 }
 
+// MoveAndPersist performs one operator-requested move and updates the saved
+// profile so a later stop/start keeps the new town, area and position.
+func (m *Manager) MoveAndPersist(ctx context.Context, id string, village, area uint8, x, y uint16, moveType uint8, bounds PlacementBounds) error {
+	client, err := m.activeClient(id)
+	if err != nil {
+		return err
+	}
+	if err := client.Move(village, area, x, y, moveType); err != nil {
+		return err
+	}
+	key := profileKey(id)
+	m.mu.Lock()
+	config := dnfrobotdomain.CloneConfig(m.config)
+	found := false
+	for index := range config.Profiles {
+		if profileKey(config.Profiles[index].ID) != key {
+			continue
+		}
+		config.Profiles[index].Village = village
+		config.Profiles[index].Area = area
+		config.Profiles[index].X = x
+		config.Profiles[index].Y = y
+		config.Profiles[index].MoveType = moveType
+		config.Profiles[index].MoveBoundsSet = bounds.Set
+		if bounds.Set {
+			config.Profiles[index].MoveMinX = bounds.MinX
+			config.Profiles[index].MoveMaxX = bounds.MaxX
+			config.Profiles[index].MoveMinY = bounds.MinY
+			config.Profiles[index].MoveMaxY = bounds.MaxY
+		} else {
+			config.Profiles[index].MoveMinX = 0
+			config.Profiles[index].MoveMaxX = 0
+			config.Profiles[index].MoveMinY = 0
+			config.Profiles[index].MoveMaxY = 0
+		}
+		found = true
+		break
+	}
+	m.mu.Unlock()
+	if !found {
+		return ErrProfileNotFound
+	}
+	saved, err := m.owner.Save(ctx, config)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.config = saved
+	m.mu.Unlock()
+	return nil
+}
+
+// Relocate persists an operator-selected channel, town, area and position.
+// A channel change requires a new game connection, so a running profile is
+// stopped and started again after the configuration has been committed.
+func (m *Manager) Relocate(ctx context.Context, id string, channelID int, village, area uint8, x, y uint16, moveType uint8, bounds PlacementBounds) (RuntimeSnapshot, error) {
+	return m.RelocateWithAutoStart(ctx, id, channelID, village, area, x, y, moveType, bounds, nil)
+}
+
+// RelocateWithAutoStart updates location and, when autoStart is non-nil, the
+// persisted restart policy. A nil pointer preserves the existing profile flag
+// for callers that only move a robot.
+func (m *Manager) RelocateWithAutoStart(
+	ctx context.Context,
+	id string,
+	channelID int,
+	village, area uint8,
+	x, y uint16,
+	moveType uint8,
+	bounds PlacementBounds,
+	autoStart *bool,
+) (RuntimeSnapshot, error) {
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+
+	key := profileKey(strings.TrimSpace(id))
+	m.mu.RLock()
+	config := dnfrobotdomain.CloneConfig(m.config)
+	_, managerRunning := m.running[key]
+	m.mu.RUnlock()
+
+	found := false
+	for index := range config.Profiles {
+		if profileKey(config.Profiles[index].ID) != key {
+			continue
+		}
+		profile := &config.Profiles[index]
+		profile.ChannelID = channelID
+		profile.Village = village
+		profile.Area = area
+		profile.X = x
+		profile.Y = y
+		profile.MoveType = moveType
+		if autoStart != nil {
+			profile.AutoStart = *autoStart
+		}
+		profile.MoveBoundsSet = bounds.Set
+		if bounds.Set {
+			profile.MoveMinX = bounds.MinX
+			profile.MoveMaxX = bounds.MaxX
+			profile.MoveMinY = bounds.MinY
+			profile.MoveMaxY = bounds.MaxY
+		} else {
+			profile.MoveMinX = 0
+			profile.MoveMaxX = 0
+			profile.MoveMinY = 0
+			profile.MoveMaxY = 0
+		}
+		found = true
+		break
+	}
+	if !found {
+		return RuntimeSnapshot{}, ErrProfileNotFound
+	}
+	normalized, err := dnfrobotdomain.Normalize(config)
+	if err != nil {
+		return RuntimeSnapshot{}, err
+	}
+	saved, err := m.owner.Save(ctx, normalized)
+	if err != nil {
+		return RuntimeSnapshot{}, err
+	}
+	m.mu.Lock()
+	m.config = saved
+	profile, _ := findProfile(saved, id)
+	m.mu.Unlock()
+	if managerRunning {
+		if err := m.stopProfileUnlocked(id); err != nil {
+			return RuntimeSnapshot{}, err
+		}
+		return m.StartProfile(id)
+	}
+	return snapshotRuntime(profile, nil), nil
+}
+
 func (m *Manager) Chat(id string, mode uint8, message string) error {
 	client, err := m.activeClient(id)
 	if err != nil {
@@ -510,6 +903,90 @@ func (m *Manager) ClosePrivateStore(id string) error {
 	return client.ClosePrivateStore()
 }
 
+// OpenExpertJobStore opens the configured decomposer or enchanter stall for a
+// town-ready robot. The profession is prepared during manual provisioning and
+// the current server remains authoritative for endurance and eligibility.
+func (m *Manager) OpenExpertJobStore(ctx context.Context, id string, requestedCost *uint32) error {
+	client, profile, err := m.profileClient(id, StateTownReady)
+	if err != nil {
+		return err
+	}
+	if profile.ExpertStoreKind == "" {
+		return errors.New("robot has no configured expert store kind")
+	}
+	cost := uint32(0)
+	if requestedCost != nil {
+		cost = *requestedCost
+	} else if profile.ExpertStoreCost != nil {
+		cost = *profile.ExpertStoreCost
+	} else {
+		cost = defaultExpertStoreCost
+	}
+	if err := client.OpenExpertJobStore(ctx, cost); err != nil {
+		return err
+	}
+	m.mu.RLock()
+	runtime := m.running[profileKey(id)]
+	m.mu.RUnlock()
+	if runtime != nil {
+		runtime.mu.Lock()
+		runtime.expertStoreCost = cost
+		runtime.mu.Unlock()
+	}
+	return nil
+}
+
+func (m *Manager) SetExpertStoreCost(ctx context.Context, id string, cost uint32) (RuntimeSnapshot, error) {
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+	id = strings.TrimSpace(id)
+	m.mu.RLock()
+	config := dnfrobotdomain.CloneConfig(m.config)
+	runtime := m.running[profileKey(id)]
+	m.mu.RUnlock()
+	found := false
+	for index := range config.Profiles {
+		if profileKey(config.Profiles[index].ID) != profileKey(id) {
+			continue
+		}
+		costCopy := cost
+		config.Profiles[index].ExpertStoreCost = &costCopy
+		found = true
+		break
+	}
+	if !found {
+		return RuntimeSnapshot{}, ErrProfileNotFound
+	}
+	saved, err := m.owner.Save(ctx, config)
+	if err != nil {
+		return RuntimeSnapshot{}, err
+	}
+	profile, _ := findProfile(saved, id)
+	m.mu.Lock()
+	m.config = saved
+	m.mu.Unlock()
+	if runtime != nil {
+		runtime.mu.Lock()
+		costCopy := cost
+		runtime.profile.ExpertStoreCost = &costCopy
+		runtime.expertStoreCost = cost
+		runtime.mu.Unlock()
+	}
+	return snapshotRuntime(profile, runtime), nil
+}
+
+// CloseExpertJobStore closes the active expert stall.
+func (m *Manager) CloseExpertJobStore(id string) error {
+	client, _, err := m.profileClient(id, StateStoreReady)
+	if err != nil {
+		return err
+	}
+	if !client.Snapshot().ExpertStoreActive {
+		return errors.New("robot does not have an active expert store")
+	}
+	return client.CloseExpertJobStore(context.Background())
+}
+
 func (m *Manager) runProfile(ctx context.Context, runtime *profileRuntime) {
 	defer m.wg.Done()
 	defer close(runtime.done)
@@ -526,6 +1003,10 @@ func (m *Manager) runProfile(ctx context.Context, runtime *profileRuntime) {
 			client := NewClient(profile, endpoint, m.secret)
 			runtime.mu.Lock()
 			runtime.client = client
+			runtime.expertAutoOpenAttempted = false
+			runtime.nextExpertAutoOpenCheck = time.Time{}
+			runtime.personalAutoOpenAttempted = false
+			runtime.nextPersonalAutoOpenCheck = time.Time{}
 			runtime.mu.Unlock()
 			err = m.runClientWithConnectLimit(ctx, client)
 			runtime.mu.Lock()
@@ -634,7 +1115,6 @@ func (m *Manager) runAutomation(ctx context.Context) {
 func (m *Manager) automationTick(now time.Time) {
 	m.reconcileTargetOnline(now)
 	m.mu.RLock()
-	policy := m.config.Automation
 	runtimes := make([]*profileRuntime, 0, len(m.running))
 	for _, runtime := range m.running {
 		runtimes = append(runtimes, runtime)
@@ -642,17 +1122,23 @@ func (m *Manager) automationTick(now time.Time) {
 	m.mu.RUnlock()
 	for _, runtime := range runtimes {
 		m.expirePendingRuntime(now, runtime)
-	}
-	if !policy.Enabled {
-		for _, runtime := range runtimes {
-			runtime.mu.Lock()
-			runtime.nextMove, runtime.nextChat, runtime.nextMegaphone, runtime.nextStore = time.Time{}, time.Time{}, time.Time{}, time.Time{}
-			runtime.mu.Unlock()
-		}
-		return
+		m.maintainExpertAutoOpen(now, runtime)
+		m.maintainPersonalStoreAutoOpen(now, runtime)
+		m.maintainExpertMachine(now, runtime)
+		m.maintainProfileSpeech(now, runtime)
 	}
 	for _, runtime := range runtimes {
-		m.automateRuntime(now, policy, runtime)
+		runtime.mu.RLock()
+		profile := runtime.profile
+		runtime.mu.RUnlock()
+		if profile.RobotType == dnfrobotdomain.RobotTypeNormal {
+			m.automateRuntime(now, profileMovementPolicy(profile), runtime)
+			continue
+		}
+		runtime.mu.Lock()
+		runtime.nextMove, runtime.nextStore = time.Time{}, time.Time{}
+		runtime.autoStore = false
+		runtime.mu.Unlock()
 	}
 }
 
@@ -802,9 +1288,18 @@ func (m *Manager) automateRuntime(now time.Time, policy dnfrobotdomain.Automatio
 	}
 	runtime.mu.Lock()
 	client := runtime.client
+	if runtime.privateStoreTransition {
+		runtime.mu.Unlock()
+		return
+	}
 	if client == nil {
 		runtime.nextMove, runtime.nextChat, runtime.nextMegaphone, runtime.nextStore, runtime.storeClose = time.Time{}, time.Time{}, time.Time{}, time.Time{}, time.Time{}
 		runtime.autoStore = false
+		runtime.mu.Unlock()
+		return
+	}
+	if runtime.recycleActive {
+		runtime.nextMove, runtime.nextChat, runtime.nextMegaphone, runtime.nextStore, runtime.storeClose = time.Time{}, time.Time{}, time.Time{}, time.Time{}, time.Time{}
 		runtime.mu.Unlock()
 		return
 	}
@@ -819,6 +1314,10 @@ func (m *Manager) automateRuntime(now time.Time, policy dnfrobotdomain.Automatio
 		return
 	}
 	if state == StateStoreReady {
+		if clientSnapshot.ExpertStoreActive {
+			runtime.mu.Unlock()
+			return
+		}
 		closeDue := runtime.autoStore && !runtime.storeClose.IsZero() && !now.Before(runtime.storeClose)
 		if closeDue {
 			runtime.autoStore = false
@@ -851,15 +1350,17 @@ func (m *Manager) automateRuntime(now time.Time, policy dnfrobotdomain.Automatio
 		runtime.storeRetryAt = time.Time{}
 	}
 	moveDue := policy.MoveIntervalMinSeconds > 0 && !runtime.nextMove.IsZero() && !now.Before(runtime.nextMove)
-	chatDue := policy.ChatIntervalMinSeconds > 0 && len(policy.ChatMessages) > 0 && !runtime.nextChat.IsZero() && !now.Before(runtime.nextChat)
-	megaphoneEligible := policy.MegaphoneIntervalMinSeconds > 0 && policy.MegaphoneProfileModulo > 0 &&
-		runtime.behaviorSeed%uint64(policy.MegaphoneProfileModulo) == 0
+	useMegaphone := profile.MegaphoneEnabled
+	chatDue := !useMegaphone && policy.ChatIntervalMinSeconds > 0 &&
+		len(policy.ChatMessages) > 0 && !runtime.nextChat.IsZero() && !now.Before(runtime.nextChat)
+	megaphoneEligible := useMegaphone && policy.MegaphoneIntervalMinSeconds > 0 &&
+		len(policy.MegaphoneMessages) > 0
 	megaphoneDue := megaphoneEligible && !runtime.nextMegaphone.IsZero() && !now.Before(runtime.nextMegaphone)
 	storeDue := !profile.AutomaticStoreDisabled && policy.StoreIntervalMinSeconds > 0 && !runtime.nextStore.IsZero() && !now.Before(runtime.nextStore)
 	if policy.MoveIntervalMinSeconds > 0 && runtime.nextMove.IsZero() {
 		runtime.nextMove = now.Add(automationBehaviorDelay(policy.MoveIntervalMinSeconds, policy.MoveIntervalMaxSeconds, runtime.moveCursor, runtime.behaviorSeed, runtime.personality, automationActionMove))
 	}
-	if policy.ChatIntervalMinSeconds > 0 && len(policy.ChatMessages) > 0 && runtime.nextChat.IsZero() {
+	if !useMegaphone && policy.ChatIntervalMinSeconds > 0 && len(policy.ChatMessages) > 0 && runtime.nextChat.IsZero() {
 		runtime.nextChat = now.Add(automationBehaviorDelay(policy.ChatIntervalMinSeconds, policy.ChatIntervalMaxSeconds, runtime.chatCursor, runtime.behaviorSeed, runtime.personality, automationActionChat))
 	}
 	if megaphoneEligible && runtime.nextMegaphone.IsZero() {
@@ -963,7 +1464,11 @@ func (m *Manager) automateRuntime(now time.Time, policy dnfrobotdomain.Automatio
 		slot, err := preparer.PrepareRobotServerMegaphone(prepareCtx, profile.AccountID, profile.CharacterID)
 		cancel()
 		if err == nil {
-			message := policy.ChatMessages[automationMessageIndex(megaphoneCursor, runtime.behaviorSeed^0x6d65676170686f6e, len(policy.ChatMessages))]
+			message := policy.MegaphoneMessages[automationMessageIndex(
+				megaphoneCursor,
+				runtime.behaviorSeed^0x6d65676170686f6e,
+				len(policy.MegaphoneMessages),
+			)]
 			err = client.Megaphone(slot, message)
 		}
 		if err != nil {
@@ -1176,17 +1681,21 @@ func snapshotRuntime(profile dnfrobotdomain.Profile, runtime *profileRuntime) Ru
 	}
 	runtime.mu.RLock()
 	client, startedAt, reconnects, lastError, schedulerManaged := runtime.client, runtime.startedAt, runtime.reconnects, runtime.lastError, runtime.schedulerManaged
-	personality, lastAction := runtime.personality, runtime.lastAction
+	personality, lastAction, recycleActive := runtime.personality, runtime.lastAction, runtime.recycleActive
 	runtime.mu.RUnlock()
 	result.Running, result.StartedAt, result.Reconnects, result.LastError = true, startedAt, reconnects, lastError
 	result.SchedulerManaged = schedulerManaged
 	result.Personality, result.LastAction = personality, lastAction
+	result.RecycleActive = recycleActive
 	if client != nil {
 		clientState := client.Snapshot()
 		result.State, result.Endpoint = clientState.State, clientState.Endpoint
 		result.ReadyAt, result.CharacterID, result.Slot = clientState.ReadyAt, clientState.CharacterID, clientState.Slot
 		result.StateSince, result.LastReceive, result.LastSend = clientState.StateSince, clientState.LastReceive, clientState.LastSend
 		result.Village, result.Area, result.X, result.Y = clientState.Village, clientState.Area, clientState.X, clientState.Y
+		result.StoreKind = clientState.StoreKind
+		result.StoreActive = clientState.StoreActive
+		result.ExpertStoreActive = clientState.ExpertStoreActive
 		if clientState.LastError != "" {
 			result.LastError = clientState.LastError
 		}

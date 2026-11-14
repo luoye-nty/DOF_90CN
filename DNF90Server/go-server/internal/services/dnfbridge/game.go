@@ -587,6 +587,7 @@ func (s *Service) handleGameConn(ctx context.Context, conn net.Conn) {
 			"local", conn.LocalAddr().String())
 		return
 	}
+	conn = newBufferedGameConn(conn)
 	session := &gameSession{
 		conn:            conn,
 		connID:          connID,
@@ -600,6 +601,13 @@ func (s *Service) handleGameConn(ctx context.Context, conn net.Conn) {
 		stall:                 newDungeonStallTracker(),
 	}
 	s.assignPartyTransportIdentity(session)
+	if _, err := s.tryCurrentRobotPreauth(ctx, session); err != nil {
+		s.logPacketEvent("game-robot-preauth-failed",
+			"conn_id", session.connID,
+			"remote", conn.RemoteAddr().String(),
+			"error", err)
+		return
+	}
 	defer s.disconnectCurrentPremiumWeb(session)
 	// Free the online seat when this connection closes no matter how the
 	// handler returns (rejected auth, bootstrap failure, read error, ...).

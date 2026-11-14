@@ -3,3 +3,9 @@
 **/bin/
 **/obj/
 **/_build/
+
+# Configurator settings written beside local executables.
+**/落叶DNF安装包配置器.ini
+**/DNF直链下载器配置器.ini
+**/落叶DNF安装包配置器.ini.tmp
+**/DNF直链下载器配置器.ini.tmp

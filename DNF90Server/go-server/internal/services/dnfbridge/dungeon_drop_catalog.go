@@ -259,6 +259,12 @@ type pvfDungeonDropCatalog struct {
 	genericStackables map[dungeonDropGradeRarityKey][]uint32
 	genericEquipment  map[dungeonDropGradeRarityKey][]dungeonDropWeightedItem
 	genericAudit      dungeonDropGenericPoolAudit
+	// robotRecycleLoaded is a separate full equipment-list index for the robot
+	// exchange. High-rarity equipment is commonly excluded from the monster
+	// drop pool but may still be a normal, free-trade PVF equipment template.
+	robotRecycleLoaded    bool
+	robotRecycleErr       error
+	robotRecycleEquipment map[dungeonDropGradeRarityKey][]uint32
 	// 「城镇增益药剂」的 buff 表（etc/variousbuffstackablelist.etc +
 	// etc/variousbufflist.etc）。惰性加载：合成测试源里没有这两张表时必须能优雅降级到
 	// `[explain]` 文字回退，不能让整条 op44 因为读不到表而失败。
@@ -1265,6 +1271,9 @@ func (s *Service) preloadDungeonDropCatalog(ctx context.Context) error {
 	}
 	if err := drops.WarmGenericPools(); err != nil {
 		return fmt.Errorf("preload dungeon drop catalog: %w", err)
+	}
+	if err := drops.ensureRobotRecycleEquipmentPool(); err != nil {
+		return fmt.Errorf("preload robot recycle equipment pool: %w", err)
 	}
 	audit := drops.GenericPoolAudit()
 	s.logPacketEvent("dnf-dungeon-drop-equipment-pool-loaded",

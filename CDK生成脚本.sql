@@ -27,9 +27,13 @@ SET @remark = '批量生成';              -- 备注，给你自己看的
 
 -- 奖励写法示例（可混合多项，顺序即发放顺序）：
 --   点券   [{"cera":10000}]
---   物品   [{"item_id":1001,"count":2,"bind":1}]      -- bind 可省略
+--   物品   [{"item_id":1001,"count":2,"bind":true}]   -- bind 只能是 true/false，可省略
 --   黑钻   [{"black_diamond_days":30}]                -- 1..3650 天，多行按天数累加
---   混合   [{"cera":5000},{"item_id":1001,"count":1,"bind":1},{"black_diamond_days":7}]
+--   混合   [{"cera":5000},{"item_id":1001,"count":1,"bind":true},{"black_diamond_days":7}]
+--
+--   ⚠ bind 必须写 JSON 布尔值 true / false，不能写 1 / 0，
+--     也不能写成字符串 "true" / "false"。
+--     认证服务按 bool 反序列化，类型错误会报“服务器内部错误”。
 
 DROP PROCEDURE IF EXISTS dnf_gen_cdk;
 DELIMITER $$
@@ -40,7 +44,7 @@ CREATE PROCEDURE dnf_gen_cdk(
     IN p_max_redeems INT,
     IN p_remark      VARCHAR(255)
 )
-BEGIN
+proc_body: BEGIN
     DECLARE chars    VARCHAR(40) DEFAULT 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     DECLARE code     VARCHAR(32) DEFAULT '';
     DECLARE i        INT DEFAULT 0;
@@ -48,6 +52,7 @@ BEGIN
     DECLARE first_id BIGINT DEFAULT 0;
     DECLARE reward   JSON;
     DECLARE rtext    TEXT DEFAULT '';
+    DECLARE invalid_bind INT DEFAULT 0;
 
     IF p_count IS NULL OR p_count < 1 OR p_count > 10000 THEN
         SELECT '数量必须是 1..10000' AS error;
@@ -60,6 +65,22 @@ BEGIN
         SELECT '兑换上限必须是 >= 0 的整数（0=不限）' AS error;
     ELSE
         SET reward = CAST(p_reward_json AS JSON);
+
+        -- bind 只允许 JSON true/false。MySQL 没有原生 BOOLEAN，
+        -- JSON_OBJECT(..., TRUE) 仍可能被写成 1，因此这里必须按 JSON 类型校验。
+        SELECT COUNT(*)
+          INTO invalid_bind
+          FROM JSON_TABLE(reward, '$[*]' COLUMNS (
+                   bind_present INT  EXISTS PATH '$.bind',
+                   bind_json    JSON PATH '$.bind'
+               )) AS jt
+         WHERE jt.bind_present = 1
+           AND COALESCE(JSON_TYPE(jt.bind_json), 'NULL') <> 'BOOLEAN';
+
+        IF invalid_bind > 0 THEN
+            SELECT '奖励中的 bind 必须是 JSON 布尔值 true/false，不能写 1/0 或字符串' AS error;
+            LEAVE proc_body;
+        END IF;
 
         -- 奖励段文本：只用于 content_raw 的可读展示，发奖逻辑只认 reward_json
         SELECT COALESCE(GROUP_CONCAT(
@@ -116,7 +137,7 @@ BEGIN
         SELECT id, redeem_code, name, max_redeems, reward_json, remark
           FROM redeem_codes WHERE id > first_id ORDER BY id;
     END IF;
-END$$
+END proc_body$$
 DELIMITER ;
 
 CALL dnf_gen_cdk(@n, @name, @reward, @maxuse, @remark);

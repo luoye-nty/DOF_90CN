@@ -8,33 +8,104 @@ import (
 	"time"
 
 	"golang.org/x/text/encoding/simplifiedchinese"
+	dnfexpertjob "longheng.io/server/internal/modules/dnf/expertjob"
 	dnfrepo "longheng.io/server/internal/modules/dnf/repository"
 )
+
+const robotExpertJobFullExperience int64 = 1_000_000_000
+
+type robotExpertJobCatalog interface {
+	Config(jobType byte) (*dnfexpertjob.Config, bool)
+	Enchanter() (*dnfexpertjob.EnchanterConfig, bool)
+	Disjointer() (*dnfexpertjob.DisjointerConfig, bool)
+}
+
+func (s *Service) currentRobotExpertJobCatalog() (robotExpertJobCatalog, error) {
+	if s != nil && s.robotExpertJobCatalogOverride != nil {
+		return s.robotExpertJobCatalogOverride, nil
+	}
+	return s.currentExpertJobCatalog()
+}
+
+func applyRobotExpertJobProvisionStats(stats map[string]int64, kind string, catalog robotExpertJobCatalog) error {
+	if stats == nil || kind == "" {
+		return nil
+	}
+	if catalog == nil {
+		return fmt.Errorf("%w: expert job catalog is unavailable", ErrGMRequestInvalid)
+	}
+	jobType := dnfexpertjob.DisjointerType
+	if kind == "enchant" {
+		jobType = dnfexpertjob.EnchanterType
+	}
+	experience := robotExpertJobFullExperience
+	stats["expert_job_type"] = int64(jobType)
+	stats["expert_job_exp"] = experience
+
+	switch jobType {
+	case dnfexpertjob.DisjointerType:
+		config, ok := catalog.Disjointer()
+		if !ok || config == nil {
+			return fmt.Errorf("%w: disjointer config is unavailable", ErrGMRequestInvalid)
+		}
+		grade := config.Level(experience)
+		if grade > len(config.RepairRules) {
+			grade = len(config.RepairRules)
+		}
+		rule, ok := config.RepairRule(grade)
+		if !ok || rule.MaxEndurance <= 0 {
+			return fmt.Errorf("%w: disjointer grade config is unavailable", ErrGMRequestInvalid)
+		}
+		stats["expert_job_machine_grade"] = int64(grade)
+		stats["expert_job_machine_endurance"] = rule.MaxEndurance
+	case dnfexpertjob.EnchanterType:
+		config, ok := catalog.Config(jobType)
+		if !ok || config == nil {
+			return fmt.Errorf("%w: enchanter config is unavailable", ErrGMRequestInvalid)
+		}
+		enchanter, ok := catalog.Enchanter()
+		if !ok || enchanter == nil {
+			return fmt.Errorf("%w: enchanter runtime config is unavailable", ErrGMRequestInvalid)
+		}
+		grade := config.Level(experience)
+		endurance := enchanter.InitialEndurance
+		if rule, found := enchanter.RepairRule(experience); found && rule.MaxEndurance > 0 {
+			endurance = rule.MaxEndurance
+		}
+		stats["expert_job_machine_grade"] = int64(grade)
+		stats["expert_job_machine_endurance"] = endurance
+	}
+	return nil
+}
 
 // GMRobotCharacterProvisionRequest creates one real, repository-backed DNF
 // character for the in-process robot manager. It deliberately enters through
 // the same PVF initialization and aggregate transaction as native op4
 // character creation; the robot manager never writes legacy SQL tables.
 type GMRobotCharacterProvisionRequest struct {
-	AccountID string `json:"account_id"`
-	Name      string `json:"name"`
-	Job       int    `json:"job"`
-	GrowType  int    `json:"grow_type"`
-	Level     int    `json:"level"`
-	Village   int    `json:"village"`
-	Area      int    `json:"area"`
-	X         int    `json:"x"`
-	Y         int    `json:"y"`
+	AccountID       string `json:"account_id"`
+	Name            string `json:"name"`
+	Job             int    `json:"job"`
+	GrowType        int    `json:"grow_type"`
+	Level           int    `json:"level"`
+	Village         int    `json:"village"`
+	Area            int    `json:"area"`
+	X               int    `json:"x"`
+	Y               int    `json:"y"`
+	ExpertStoreKind string `json:"expert_store_kind,omitempty"`
+	ExpertStoreCost uint32 `json:"expert_store_cost,omitempty"`
 }
 
 type GMRobotCharacterProvisionResult struct {
-	CharacterID uint16 `json:"character_id"`
-	AccountID   string `json:"account_id"`
-	Name        string `json:"name"`
-	Slot        int    `json:"slot"`
-	Job         int    `json:"job"`
-	GrowType    int    `json:"grow_type"`
-	Level       int    `json:"level"`
+	CharacterID     uint16 `json:"character_id"`
+	AccountID       string `json:"account_id"`
+	Name            string `json:"name"`
+	Slot            int    `json:"slot"`
+	Job             int    `json:"job"`
+	GrowType        int    `json:"grow_type"`
+	Level           int    `json:"level"`
+	ExpertStoreKind string `json:"expert_store_kind,omitempty"`
+	ExpertStoreCost uint32 `json:"expert_store_cost,omitempty"`
 }
 
 func (s *Service) GMProvisionRobotCharacter(ctx context.Context, request GMRobotCharacterProvisionRequest) (GMRobotCharacterProvisionResult, error) {
@@ -43,12 +114,16 @@ func (s *Service) GMProvisionRobotCharacter(ctx context.Context, request GMRobot
 	}
 	request.AccountID = strings.TrimSpace(request.AccountID)
 	request.Name = strings.TrimSpace(request.Name)
+	request.ExpertStoreKind = strings.ToLower(strings.TrimSpace(request.ExpertStoreKind))
 	if request.AccountID == "" || len(request.AccountID) > 96 || strings.IndexByte(request.AccountID, 0) >= 0 ||
 		request.Job < 0 || request.Job > 15 || request.GrowType < 0 || request.GrowType > 0xff ||
 		request.Level < 1 || request.Level > currentAdventureCharacterLevelCap ||
 		request.Village < 0 || request.Village > 0xff || request.Area < 0 || request.Area > 0xff ||
 		request.X < 0 || request.X > 0xffff || request.Y < 0 || request.Y > 0xffff {
 		return GMRobotCharacterProvisionResult{}, ErrGMRequestInvalid
+	}
+	if request.ExpertStoreKind != "" && request.ExpertStoreKind != "disjoint" && request.ExpertStoreKind != "enchant" {
+		return GMRobotCharacterProvisionResult{}, fmt.Errorf("%w: expert store kind must be disjoint or enchant", ErrGMRequestInvalid)
 	}
 	encodedName, err := simplifiedchinese.GB18030.NewEncoder().Bytes([]byte(request.Name))
 	if err != nil {
@@ -103,6 +178,15 @@ func (s *Service) GMProvisionRobotCharacter(ctx context.Context, request GMRobot
 	// town coordinates are already validated above.
 	stats[currentDungeonTutorialCompletedKey] = currentDungeonTutorialCompleteFlag
 	stats["tutorial_reward_progress_38"] = 1
+	if request.ExpertStoreKind != "" {
+		catalog, catalogErr := s.currentRobotExpertJobCatalog()
+		if catalogErr != nil {
+			return GMRobotCharacterProvisionResult{}, fmt.Errorf("load expert job catalog: %w", catalogErr)
+		}
+		if err := applyRobotExpertJobProvisionStats(stats, request.ExpertStoreKind, catalog); err != nil {
+			return GMRobotCharacterProvisionResult{}, err
+		}
+	}
 	// Automatic fleet composition advances this durable marker only after the
 	// authoritative main-story closure commits in the same settlement. Keeping
 	// it at zero here makes a freshly provisioned level-cap robot enter that
@@ -138,5 +222,6 @@ func (s *Service) GMProvisionRobotCharacter(ctx context.Context, request GMRobot
 	return GMRobotCharacterProvisionResult{
 		CharacterID: uint16(characterID), AccountID: request.AccountID, Name: name,
 		Slot: slot, Job: request.Job, GrowType: request.GrowType, Level: request.Level,
+		ExpertStoreKind: request.ExpertStoreKind, ExpertStoreCost: request.ExpertStoreCost,
 	}, nil
 }

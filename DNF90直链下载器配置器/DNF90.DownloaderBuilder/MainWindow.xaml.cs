@@ -14,6 +14,30 @@ public partial class MainWindow : Window
         OutputPathTextBox.Text = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
             "DNF下载器输出");
+        var saved = DownloaderBuilderSettingsStore.Load();
+        if (saved is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(saved.DownloaderName))
+            {
+                DownloaderNameTextBox.Text = saved.DownloaderName;
+            }
+            if (!string.IsNullOrEmpty(saved.Urls))
+            {
+                UrlsTextBox.Text = saved.Urls;
+            }
+            if (!string.IsNullOrWhiteSpace(saved.Disk))
+            {
+                DiskTextBox.Text = saved.Disk;
+            }
+            if (!string.IsNullOrWhiteSpace(saved.FolderName))
+            {
+                FolderNameTextBox.Text = saved.FolderName;
+            }
+            if (!string.IsNullOrWhiteSpace(saved.OutputPath))
+            {
+                OutputPathTextBox.Text = saved.OutputPath;
+            }
+        }
     }
 
     private void SelectOutputButton_Click(object sender, RoutedEventArgs e)
@@ -79,12 +103,30 @@ public partial class MainWindow : Window
                     DefaultDownloadFolderName = folderName,
                 });
 
+            string? settingsWarning = null;
+            try
+            {
+                DownloaderBuilderSettingsStore.Save(new DownloaderBuilderSettings
+                {
+                    DownloaderName = name,
+                    Urls = string.Join("\r\n", urls),
+                    Disk = disk,
+                    FolderName = folderName,
+                    OutputPath = outputDirectory,
+                });
+            }
+            catch (Exception settingsError)
+            {
+                settingsWarning = "参数已用于本次生成，但保存 INI 失败：\n" + settingsError.Message;
+            }
+
             StatusText.Text = "下载器生成完成";
             DetailText.Text = outputPath;
             OpenOutputButton.IsEnabled = true;
             MessageBox.Show(this,
                 "直链下载器已生成：\n\n" + outputPath +
-                $"\n\n共 {urls.Count} 个下载地址；默认保存到 {disk}:\\{folderName}。",
+                $"\n\n共 {urls.Count} 个下载地址；默认保存到 {disk}:\\{folderName}。" +
+                (settingsWarning is null ? "" : "\n\n" + settingsWarning),
                 "生成成功", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)

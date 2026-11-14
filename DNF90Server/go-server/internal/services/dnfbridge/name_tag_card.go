@@ -125,6 +125,10 @@ func applyCurrentNameTagCardAssets(
 // currentCleanupExpiredNameTagCard resets name_tag_item_id if the card has
 // expired. Called during character login initialization (PR #239).
 func currentCleanupExpiredNameTagCard(character *dnfrepo.CharacterRecord) bool {
+	return cleanupExpiredNameTagStateAt(character, time.Now().UTC())
+}
+
+func cleanupExpiredNameTagStateAt(character *dnfrepo.CharacterRecord, now time.Time) bool {
 	if character == nil || character.Stats == nil {
 		return false
 	}
@@ -133,7 +137,10 @@ func currentCleanupExpiredNameTagCard(character *dnfrepo.CharacterRecord) bool {
 	if itemID == 0 || expireTime == 0 {
 		return false
 	}
-	if currentNameTagExpireNow() < expireTime {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if now.Unix() < expireTime {
 		return false
 	}
 	character.Stats["name_tag_item_id"] = 0

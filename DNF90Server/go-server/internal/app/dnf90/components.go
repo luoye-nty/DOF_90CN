@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	dnfrobotdomain "longheng.io/server/internal/modules/dnf/robot"
 	appkit "longheng.io/server/internal/platform/app"
 	"longheng.io/server/internal/services/dnfbridge"
 	"longheng.io/server/internal/services/dnfrobot"
@@ -68,12 +69,26 @@ func components(env *appkit.Env, cancel context.CancelFunc) ([]appkit.Component,
 	if robotsEnabled {
 		robotSessionSecret = env.Core().Config.Admin.Token
 	}
+	var robotManager *dnfrobot.Manager
 	bridge := dnfbridge.NewWithOptions(env, dnfbridge.ServiceOptions{
 		RepositoryProvider:         runtime.Group,
 		LocalDebugMode:             localDNFDebugModeEnabled(env),
 		LocalDebugStrikeOnSkillUse: localDNFDebugStrikeOnSkillUseEnabled(env),
 		DebugKillRoomHotkey:        dnfDebugKillRoomHotkeyEnabled(),
 		RobotSessionSecret:         robotSessionSecret,
+		RobotRecycleHooks: dnfbridge.RobotRecycleHooks{
+			Begin: func(characterID uint16) (dnfrobotdomain.Profile, bool) {
+				if robotManager == nil {
+					return dnfrobotdomain.Profile{}, false
+				}
+				return robotManager.BeginRecycle(characterID)
+			},
+			End: func(profileID string) {
+				if robotManager != nil {
+					robotManager.EndRecycle(profileID)
+				}
+			},
+		},
 	})
 	if env != nil && env.AdminMux != nil {
 		adminListen := strings.TrimSpace(env.Core().Config.Admin.Listen)
@@ -87,7 +102,6 @@ func components(env *appkit.Env, cancel context.CancelFunc) ([]appkit.Component,
 	registerDNFDebugRoutes(env, bridge)
 	registerDNFGMRoutes(env, bridge)
 	registerGMAdminRoutes(env, bridge)
-	var robotManager *dnfrobot.Manager
 	if robotsEnabled {
 		robotManager = dnfrobot.NewManager(env.Logger, runtime.Group, bridge, env.Core().Config.Admin.Token)
 		registerDNFRobotGMRoutes(env, bridge, robotManager)

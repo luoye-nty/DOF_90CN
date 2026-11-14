@@ -598,6 +598,16 @@ constexpr uintptr_t kLocalActorBindingSetterRva = 0x0228FEB0;
 // it never reads or writes the manager and never touches the local actor's
 // sub-profession state (see the removal note in the installer area).
 constexpr unsigned short kExpertJobInfoOpcode = 205;
+// The native class0/op538 reader seeds the decomposer store clone's displayed
+// grade before it knows the durable machine grade. The server appends this
+// optional trailer to the native create notification so the DLL can correct the
+// already-created store visual immediately. Clients without this hook ignore
+// trailing bytes and retain the native body unchanged.
+constexpr unsigned short kExpertStoreCreateNotificationOpcode = 538;
+constexpr unsigned int kExpertStoreGradeTrailerMagic = 0x47534a45; // "EJSG"
+constexpr size_t kExpertStoreGradeTrailerBytes = 12;
+constexpr size_t kActorExpertStoreVisualOffset = 0x534;
+constexpr size_t kExpertStoreVisualGradeOffset = 0x36C;
 constexpr uintptr_t kActorStateResolverRva = 0x0364C1A0; // sub_3A4C1A0
 // UI registry helpers, all __thiscall on the UI manager whose pointer sits at
 // VA 0x051B2764 (the client's own call sites load it with
@@ -2505,6 +2515,62 @@ bool IsObservedDispatchOpcode(unsigned int classID, unsigned int opcode)
         opcode == 1206;
 }
 
+void ApplyExpertStoreGradeTrailerAfterNative(int packet)
+{
+    if (!packet || !g_dnfBase) return;
+
+    __try {
+        const unsigned char* bytes =
+            reinterpret_cast<const unsigned char*>(packet);
+        const unsigned int opcode =
+            *reinterpret_cast<const unsigned short*>(bytes + 1);
+        const unsigned int packetLength =
+            *reinterpret_cast<const unsigned int*>(bytes + 3);
+        if (opcode != kExpertStoreCreateNotificationOpcode ||
+            packetLength < 16 + 3 + kExpertStoreGradeTrailerBytes) {
+            return;
+        }
+
+        const unsigned char* body = bytes + 16;
+        const size_t bodyLength = packetLength - 16;
+        const unsigned char* trailer =
+            body + bodyLength - kExpertStoreGradeTrailerBytes;
+        unsigned int magic = 0;
+        unsigned int grade = 0;
+        memcpy(&magic, trailer, sizeof(magic));
+        if (magic != kExpertStoreGradeTrailerMagic || body[0] != 0) return;
+        memcpy(&grade, trailer + 4, sizeof(grade));
+        if (grade == 0 || grade > 0xFF) return;
+
+        unsigned short ownerID = 0;
+        memcpy(&ownerID, body + 1, sizeof(ownerID));
+        if (ownerID == 0) return;
+
+        ActorByObjectKeyFn actorByObjectKeyFn =
+            reinterpret_cast<ActorByObjectKeyFn>(g_originalActorByObjectKey);
+        if (!actorByObjectKeyFn) return;
+        void* actor = actorByObjectKeyFn(ownerID);
+        if (!actor) return;
+        uintptr_t storeVisual = *reinterpret_cast<uintptr_t*>(
+            reinterpret_cast<uintptr_t>(actor) + kActorExpertStoreVisualOffset);
+        if (!storeVisual) return;
+
+        int* nativeGrade = reinterpret_cast<int*>(
+            storeVisual + kExpertStoreVisualGradeOffset);
+        const int previousGrade = *nativeGrade;
+        *nativeGrade = static_cast<int>(grade);
+        LogLine("expert-store create grade corrected owner=%u actor=%p "
+            "store=%p previous=%d grade=%u source=EJSG-trailer",
+            static_cast<unsigned int>(ownerID), actor,
+            reinterpret_cast<void*>(storeVisual), previousGrade,
+            grade);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        LogLine("expert-store create grade correction exception code=0x%08X",
+            GetExceptionCode());
+    }
+}
+
 void TraceDispatchRegistryEntry(unsigned int classID, unsigned int opcode)
 {
     void* registry = nullptr;
@@ -3971,6 +4037,7 @@ int __stdcall ProxyTownCopresenceClass0Dispatch(int a1, int packet)
     }
     ServiceExpertJobWindowClose();
     int result = original ? original(a1, packet) : 0;
+    ApplyExpertStoreGradeTrailerAfterNative(packet);
     if (UiRegistryTrackingActive()) {
         UiRegistrySnapshot(opcode, packetLength);
     }
@@ -4447,6 +4514,7 @@ int __stdcall ProxyClass0Dispatch(int a1, int packet)
     Class0DispatchFn original = reinterpret_cast<Class0DispatchFn>(g_originalClass0Dispatch);
     ServiceExpertJobWindowClose();
     int result = original ? original(a1, packet) : 0;
+    ApplyExpertStoreGradeTrailerAfterNative(packet);
     g_traceOp24 = previousTraceOp24;
     g_op24SceneModeCalls = previousSceneModeCalls;
     g_op24LoadingGateCalls = previousLoadingGateCalls;
@@ -14779,7 +14847,7 @@ wchar_t* __cdecl ProxyRegionNameResolver(int regionID)
 // This DLL reads neither an environment variable nor an INI file any more (see
 // clientConfig at the top of this file), so the constants are the only source.
 // Renaming the server means editing them and rebuilding.
-constexpr wchar_t kBuiltInRegionName[] = L"奇迹暖暖";
+constexpr wchar_t kBuiltInRegionName[] = L"落叶DNF";
 constexpr int kBuiltInRegionID = 1;
 
 bool InstallCustomRegionNameCompatibility()

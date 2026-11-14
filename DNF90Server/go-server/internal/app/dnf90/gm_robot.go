@@ -2,9 +2,12 @@ package dnf90
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/http"
+	"strconv"
 	"strings"
 
 	dnfrobotdomain "longheng.io/server/internal/modules/dnf/robot"
@@ -14,40 +17,55 @@ import (
 )
 
 const (
-	gmRobotsPath              = "/local/dnf-gm/robots"
-	gmRobotStatusPath         = "/local/dnf-gm/robots/status"
-	gmRobotBatchPath          = "/local/dnf-gm/robots/batch"
-	gmRobotOperationsPath     = "/local/dnf-gm/robots/operations"
-	gmRobotProfilePath        = "/local/dnf-gm/robots/profile"
-	gmRobotProvisionPath      = "/local/dnf-gm/robots/provision"
-	gmRobotProvisionBatchPath = "/local/dnf-gm/robots/provision/batch"
-	gmRobotStockPath          = "/local/dnf-gm/robots/stock"
-	gmRobotAutomationPath     = "/local/dnf-gm/robots/automation"
-	gmRobotStartPath          = "/local/dnf-gm/robots/start"
-	gmRobotStopPath           = "/local/dnf-gm/robots/stop"
-	gmRobotMovePath           = "/local/dnf-gm/robots/move"
-	gmRobotChatPath           = "/local/dnf-gm/robots/chat"
-	gmRobotStoreOpenPath      = "/local/dnf-gm/robots/store/open"
-	gmRobotStoreClosePath     = "/local/dnf-gm/robots/store/close"
+	gmRobotsPath                  = "/local/dnf-gm/robots"
+	gmRobotStatusPath             = "/local/dnf-gm/robots/status"
+	gmRobotBatchPath              = "/local/dnf-gm/robots/batch"
+	gmRobotOperationsPath         = "/local/dnf-gm/robots/operations"
+	gmRobotProfilePath            = "/local/dnf-gm/robots/profile"
+	gmRobotProvisionPath          = "/local/dnf-gm/robots/provision"
+	gmRobotProvisionBatchPath     = "/local/dnf-gm/robots/provision/batch"
+	gmRobotStockPath              = "/local/dnf-gm/robots/stock"
+	gmRobotAutomationPath         = "/local/dnf-gm/robots/automation"
+	gmRobotSpeechPath             = "/local/dnf-gm/robots/speech"
+	gmRobotRecyclePath            = "/local/dnf-gm/robots/recycle"
+	gmRobotStartPath              = "/local/dnf-gm/robots/start"
+	gmRobotStopPath               = "/local/dnf-gm/robots/stop"
+	gmRobotMovePath               = "/local/dnf-gm/robots/move"
+	gmRobotRelocatePath           = "/local/dnf-gm/robots/relocate"
+	gmRobotChatPath               = "/local/dnf-gm/robots/chat"
+	gmRobotStoreOpenPath          = "/local/dnf-gm/robots/store/open"
+	gmRobotStoreClosePath         = "/local/dnf-gm/robots/store/close"
+	gmRobotPrivateStoreConfigPath = "/local/dnf-gm/robots/private-store/config"
+	gmRobotExpertStoreOpenPath    = "/local/dnf-gm/robots/expert-store/open"
+	gmRobotExpertStoreClosePath   = "/local/dnf-gm/robots/expert-store/close"
+	gmRobotExpertStoreCostPath    = "/local/dnf-gm/robots/expert-store/cost"
+	gmRobotReferencePath          = "/local/dnf-gm/robots/reference"
 )
 
 const gmRobotMaximumProvisionBatch = 64
 
+const gmRobotCharacterNameAttempts = 32
+
+var gmRobotNameCharacters = []rune("晨星月影风语霜华赤焰青岚星尘流光云歌夜航银羽苍穹花火山岚晴空远星剑客旅人游侠勇者行者守望逐风寻梦猎手冒险先锋")
+
 type gmRobotProvisionBatchRequest struct {
-	Count         int    `json:"count"`
-	StartIndex    int    `json:"start_index"`
-	AccountPrefix string `json:"account_prefix"`
-	NamePrefix    string `json:"name_prefix"`
-	ProfilePrefix string `json:"profile_prefix"`
-	ChannelID     int    `json:"channel_id"`
-	AutoStart     bool   `json:"auto_start"`
-	Job           int    `json:"job"`
-	GrowType      int    `json:"grow_type"`
-	Level         int    `json:"level"`
-	Village       int    `json:"village"`
-	Area          int    `json:"area"`
-	X             int    `json:"x"`
-	Y             int    `json:"y"`
+	RobotType       string `json:"robot_type"`
+	Count           int    `json:"count"`
+	StartIndex      int    `json:"start_index"`
+	AccountPrefix   string `json:"account_prefix"`
+	NamePrefix      string `json:"name_prefix"`
+	ProfilePrefix   string `json:"profile_prefix"`
+	ChannelID       int    `json:"channel_id"`
+	AutoStart       bool   `json:"auto_start"`
+	Job             int    `json:"job"`
+	GrowType        int    `json:"grow_type"`
+	Level           int    `json:"level"`
+	Village         int    `json:"village"`
+	Area            int    `json:"area"`
+	X               int    `json:"x"`
+	Y               int    `json:"y"`
+	ExpertStoreKind string `json:"expert_store_kind,omitempty"`
+	ExpertStoreCost uint32 `json:"expert_store_cost,omitempty"`
 }
 
 type gmRobotProvisionBatchRow struct {
@@ -79,6 +97,13 @@ func registerDNFRobotGMRoutes(env *appkit.Env, bridge *dnfbridge.Service, manage
 			return
 		}
 		writeGMJSON(w, http.StatusOK, map[string]any{"ok": true, "data": manager.List()})
+	}))
+	env.AdminMux.HandleFunc(gmRobotReferencePath, auth(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			gmMethodNotAllowed(w, http.MethodGet)
+			return
+		}
+		writeGMJSON(w, http.StatusOK, map[string]any{"ok": true, "data": bridge.RobotReferenceCatalog()})
 	}))
 	env.AdminMux.HandleFunc(gmRobotStatusPath, auth(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -197,11 +222,68 @@ func registerDNFRobotGMRoutes(env *appkit.Env, bridge *dnfbridge.Service, manage
 			gmMethodNotAllowed(w, "GET, POST")
 		}
 	}))
+	env.AdminMux.HandleFunc(gmRobotSpeechPath, auth(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			gmMethodNotAllowed(w, http.MethodPost)
+			return
+		}
+		var request struct {
+			Modes []dnfrobot.SpeechMode `json:"modes"`
+		}
+		if !decodeGMRequest(w, r, &request, 64<<10) {
+			return
+		}
+		result, err := manager.UpdateSpeechModes(r.Context(), request.Modes)
+		if err != nil {
+			writeGMRobotError(w, err)
+			return
+		}
+		writeGMJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "message": "robot speech modes saved", "data": result,
+		})
+	}))
+	env.AdminMux.HandleFunc(gmRobotRecyclePath, auth(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			id := strings.TrimSpace(r.URL.Query().Get("id"))
+			if id == "" {
+				writeGMRobotError(w, fmt.Errorf("%w: robot id is required", dnfbridge.ErrGMRequestInvalid))
+				return
+			}
+			snapshot, err := manager.Snapshot(id)
+			if err != nil {
+				writeGMRobotError(w, err)
+				return
+			}
+			writeGMJSON(w, http.StatusOK, map[string]any{"ok": true, "data": snapshot.Profile.Recycle})
+		case http.MethodPost:
+			var request struct {
+				ID string `json:"id"`
+				dnfrobotdomain.RecyclePolicy
+			}
+			if !decodeGMRequest(w, r, &request, 512<<10) {
+				return
+			}
+			request.ID = strings.TrimSpace(request.ID)
+			if request.ID == "" {
+				writeGMRobotError(w, fmt.Errorf("%w: robot id is required", dnfbridge.ErrGMRequestInvalid))
+				return
+			}
+			result, err := manager.UpdateProfileRecyclePolicy(r.Context(), request.ID, request.RecyclePolicy)
+			if err != nil {
+				writeGMRobotError(w, err)
+				return
+			}
+			writeGMJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "robot recycle policy saved", "data": result})
+		default:
+			gmMethodNotAllowed(w, "GET, POST")
+		}
+	}))
 	env.AdminMux.HandleFunc(gmRobotProfilePath, auth(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
 			var profile dnfrobotdomain.Profile
-			if !decodeGMRequest(w, r, &profile, 16<<10) {
+			if !decodeGMRequest(w, r, &profile, 512<<10) {
 				return
 			}
 			result, err := manager.Upsert(r.Context(), profile)
@@ -268,11 +350,71 @@ func registerDNFRobotGMRoutes(env *appkit.Env, bridge *dnfbridge.Service, manage
 		if !decodeGMRequest(w, r, &request, 16<<10) {
 			return
 		}
-		if err := manager.Move(request.ID, request.Village, request.Area, request.X, request.Y, request.MoveType); err != nil {
+		bounds := dnfrobot.PlacementBounds{}
+		if placement, ok := bridge.RobotMovementBoundsAround(int(request.Village), int(request.Area), int(request.X), int(request.Y)); ok {
+			bounds = dnfrobot.PlacementBounds{
+				Set: true, MinX: placement.MinX, MaxX: placement.MaxX,
+				MinY: placement.MinY, MaxY: placement.MaxY,
+			}
+		}
+		if err := manager.MoveAndPersist(r.Context(), request.ID, request.Village, request.Area, request.X, request.Y, request.MoveType, bounds); err != nil {
 			writeGMRobotError(w, err)
 			return
 		}
 		writeGMJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "robot move packet sent"})
+	}))
+	env.AdminMux.HandleFunc(gmRobotRelocatePath, auth(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			gmMethodNotAllowed(w, http.MethodPost)
+			return
+		}
+		var request struct {
+			ID        string `json:"id"`
+			ChannelID int    `json:"channel_id"`
+			Village   uint8  `json:"village"`
+			Area      uint8  `json:"area"`
+			X         uint16 `json:"x"`
+			Y         uint16 `json:"y"`
+			MoveType  uint8  `json:"move_type"`
+			AutoStart *bool  `json:"auto_start,omitempty"`
+		}
+		if !decodeGMRequest(w, r, &request, 16<<10) {
+			return
+		}
+		request.ID = strings.TrimSpace(request.ID)
+		if request.ID == "" || request.ChannelID <= 0 || request.ChannelID > 65535 {
+			writeGMRobotError(w, errors.New("robot id or channel id is invalid"))
+			return
+		}
+		if _, err := bridge.RobotGameEndpoint(request.ChannelID); err != nil {
+			writeGMRobotError(w, fmt.Errorf("target channel is unavailable: %w", err))
+			return
+		}
+		bounds := dnfrobot.PlacementBounds{}
+		if placement, ok := bridge.RobotMovementBoundsAround(int(request.Village), int(request.Area), int(request.X), int(request.Y)); ok {
+			bounds = dnfrobot.PlacementBounds{
+				Set: true, MinX: placement.MinX, MaxX: placement.MaxX,
+				MinY: placement.MinY, MaxY: placement.MaxY,
+			}
+		}
+		operation := manager.BeginOperation("relocate", request.ID)
+		result, err := manager.RelocateWithAutoStart(
+			r.Context(), request.ID, request.ChannelID,
+			request.Village, request.Area, request.X, request.Y, request.MoveType, bounds, request.AutoStart,
+		)
+		autoStart := "unchanged"
+		if request.AutoStart != nil {
+			autoStart = strconv.FormatBool(*request.AutoStart)
+		}
+		manager.CompleteOperation(operation.ID, fmt.Sprintf("channel=%d town=%d area=%d x=%d y=%d auto_start=%s",
+			request.ChannelID, request.Village, request.Area, request.X, request.Y, autoStart), err)
+		if err != nil {
+			writeGMRobotError(w, err)
+			return
+		}
+		writeGMJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "message": "robot location updated", "data": result,
+		})
 	}))
 	env.AdminMux.HandleFunc(gmRobotChatPath, auth(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -299,19 +441,44 @@ func registerDNFRobotGMRoutes(env *appkit.Env, bridge *dnfbridge.Service, manage
 			return
 		}
 		var request struct {
-			ID        string `json:"id"`
-			Title     string `json:"title"`
-			Maximum   int    `json:"maximum_rows"`
-			UnitPrice uint32 `json:"unit_price"`
+			ID    string                            `json:"id"`
+			Title string                            `json:"title"`
+			Items []dnfrobotdomain.PrivateStoreItem `json:"items"`
 		}
 		if !decodeGMRequest(w, r, &request, 16<<10) {
 			return
 		}
-		if err := manager.OpenPrivateStore(r.Context(), request.ID, request.Title, request.Maximum, request.UnitPrice); err != nil {
+		if _, err := manager.ConfigurePrivateStore(r.Context(), request.ID, request.Title, request.Items); err != nil {
+			writeGMRobotError(w, err)
+			return
+		}
+		if err := manager.OpenConfiguredPrivateStore(r.Context(), request.ID); err != nil {
 			writeGMRobotError(w, err)
 			return
 		}
 		writeGMJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "robot private store opening requested"})
+	}))
+	env.AdminMux.HandleFunc(gmRobotPrivateStoreConfigPath, auth(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			gmMethodNotAllowed(w, http.MethodPost)
+			return
+		}
+		var request struct {
+			ID    string                            `json:"id"`
+			Title string                            `json:"title"`
+			Items []dnfrobotdomain.PrivateStoreItem `json:"items"`
+		}
+		if !decodeGMRequest(w, r, &request, 32<<10) {
+			return
+		}
+		result, err := manager.ConfigurePrivateStore(r.Context(), request.ID, request.Title, request.Items)
+		if err != nil {
+			writeGMRobotError(w, err)
+			return
+		}
+		writeGMJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "message": "robot private store configuration saved", "data": result,
+		})
 	}))
 	env.AdminMux.HandleFunc(gmRobotStoreClosePath, auth(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -328,15 +495,97 @@ func registerDNFRobotGMRoutes(env *appkit.Env, bridge *dnfbridge.Service, manage
 		}
 		writeGMJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "robot private store close requested"})
 	}))
+	env.AdminMux.HandleFunc(gmRobotExpertStoreOpenPath, auth(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			gmMethodNotAllowed(w, http.MethodPost)
+			return
+		}
+		var request struct {
+			ID   string `json:"id"`
+			Cost uint32 `json:"cost"`
+		}
+		if !decodeGMRequest(w, r, &request, 16<<10) {
+			return
+		}
+		cost := request.Cost
+		if err := manager.OpenExpertJobStore(r.Context(), strings.TrimSpace(request.ID), &cost); err != nil {
+			writeGMRobotError(w, err)
+			return
+		}
+		writeGMJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "robot expert store opening requested"})
+	}))
+	env.AdminMux.HandleFunc(gmRobotExpertStoreClosePath, auth(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			gmMethodNotAllowed(w, http.MethodPost)
+			return
+		}
+		id, ok := decodeRobotID(w, r)
+		if !ok {
+			return
+		}
+		if err := manager.CloseExpertJobStore(id); err != nil {
+			writeGMRobotError(w, err)
+			return
+		}
+		writeGMJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "robot expert store close requested"})
+	}))
+	env.AdminMux.HandleFunc(gmRobotExpertStoreCostPath, auth(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			gmMethodNotAllowed(w, http.MethodPost)
+			return
+		}
+		var request struct {
+			ID   string `json:"id"`
+			Cost uint32 `json:"cost"`
+		}
+		if !decodeGMRequest(w, r, &request, 16<<10) {
+			return
+		}
+		request.ID = strings.TrimSpace(request.ID)
+		if request.ID == "" {
+			writeGMRobotError(w, errors.New("robot id or expert store cost is invalid"))
+			return
+		}
+		result, err := manager.SetExpertStoreCost(r.Context(), request.ID, request.Cost)
+		if err != nil {
+			writeGMRobotError(w, err)
+			return
+		}
+		writeGMJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "message": "robot expert store cost updated", "data": result,
+		})
+	}))
 }
 
 func normalizeGMRobotProvisionBatchRequest(request gmRobotProvisionBatchRequest) (gmRobotProvisionBatchRequest, error) {
 	request.AccountPrefix = strings.TrimSpace(request.AccountPrefix)
 	request.NamePrefix = strings.TrimSpace(request.NamePrefix)
 	request.ProfilePrefix = strings.TrimSpace(request.ProfilePrefix)
+	request.RobotType = strings.ToLower(strings.TrimSpace(request.RobotType))
+	if request.RobotType == "" {
+		request.RobotType = string(dnfrobotdomain.RobotTypeNormal)
+	}
+	request.ExpertStoreKind = strings.ToLower(strings.TrimSpace(request.ExpertStoreKind))
 	if request.Count < 1 || request.Count > gmRobotMaximumProvisionBatch || request.StartIndex < 0 || request.StartIndex > 999999 ||
 		request.AccountPrefix == "" || request.NamePrefix == "" || request.ProfilePrefix == "" || request.ChannelID < 1 || request.ChannelID > 65535 {
 		return gmRobotProvisionBatchRequest{}, fmt.Errorf("%w: invalid robot provision batch", dnfbridge.ErrGMRequestInvalid)
+	}
+	if request.ExpertStoreKind != "" && request.ExpertStoreKind != "disjoint" && request.ExpertStoreKind != "enchant" {
+		return gmRobotProvisionBatchRequest{}, fmt.Errorf("%w: invalid robot expert store kind", dnfbridge.ErrGMRequestInvalid)
+	}
+	switch dnfrobotdomain.RobotType(request.RobotType) {
+	case dnfrobotdomain.RobotTypeProfessional:
+		if request.ExpertStoreKind == "" {
+			return gmRobotProvisionBatchRequest{}, fmt.Errorf("%w: professional robot requires an expert store kind", dnfbridge.ErrGMRequestInvalid)
+		}
+	case dnfrobotdomain.RobotTypePersonalStore:
+		request.ExpertStoreKind = ""
+		request.ExpertStoreCost = 0
+	case dnfrobotdomain.RobotTypeNormal:
+		request.ExpertStoreKind = ""
+		request.ExpertStoreCost = 0
+	default:
+		return gmRobotProvisionBatchRequest{}, fmt.Errorf("%w: invalid robot type", dnfbridge.ErrGMRequestInvalid)
 	}
 	if request.StartIndex == 0 {
 		request.StartIndex = 1
@@ -361,7 +610,7 @@ func provisionGMRobotBatch(ctx context.Context, bridge *dnfbridge.Service, manag
 			Index:     index,
 			ProfileID: fmt.Sprintf("%s-%03d", request.ProfilePrefix, index),
 			AccountID: fmt.Sprintf("%s-%03d", request.AccountPrefix, index),
-			Name:      fmt.Sprintf("%s%d", request.NamePrefix, index),
+			Name:      "",
 		}
 		if ctx != nil && ctx.Err() != nil {
 			row.Error = ctx.Err().Error()
@@ -369,17 +618,33 @@ func provisionGMRobotBatch(ctx context.Context, bridge *dnfbridge.Service, manag
 			result.Rows = append(result.Rows, row)
 			continue
 		}
-		provisioned, err := bridge.GMProvisionRobotCharacter(ctx, dnfbridge.GMRobotCharacterProvisionRequest{
-			AccountID: row.AccountID,
-			Name:      row.Name,
-			Job:       request.Job,
-			GrowType:  request.GrowType,
-			Level:     request.Level,
-			Village:   request.Village,
-			Area:      request.Area,
-			X:         request.X,
-			Y:         request.Y,
-		})
+		moveBounds, hasMoveBounds := bridge.RobotMovementBoundsAround(request.Village, request.Area, request.X, request.Y)
+		var provisioned dnfbridge.GMRobotCharacterProvisionResult
+		var err error
+		for attempt := 0; attempt < gmRobotCharacterNameAttempts; attempt++ {
+			name, nameErr := randomRobotCharacterName(request.NamePrefix)
+			if nameErr != nil {
+				err = nameErr
+				break
+			}
+			row.Name = name
+			provisioned, err = bridge.GMProvisionRobotCharacter(ctx, dnfbridge.GMRobotCharacterProvisionRequest{
+				AccountID:       row.AccountID,
+				Name:            name,
+				Job:             request.Job,
+				GrowType:        request.GrowType,
+				Level:           request.Level,
+				Village:         request.Village,
+				Area:            request.Area,
+				X:               request.X,
+				Y:               request.Y,
+				ExpertStoreKind: request.ExpertStoreKind,
+				ExpertStoreCost: request.ExpertStoreCost,
+			})
+			if err == nil || !isRobotCharacterNameConflict(err) {
+				break
+			}
+		}
 		if err != nil {
 			row.Error = err.Error()
 			result.Failed++
@@ -387,17 +652,40 @@ func provisionGMRobotBatch(ctx context.Context, bridge *dnfbridge.Service, manag
 			continue
 		}
 		row.CharacterID = provisioned.CharacterID
-		runtime, err := manager.Upsert(ctx, dnfrobotdomain.Profile{
-			ID:          row.ProfileID,
-			AccountID:   row.AccountID,
-			CharacterID: provisioned.CharacterID,
-			ChannelID:   request.ChannelID,
-			AutoStart:   request.AutoStart,
-			Village:     uint8(request.Village),
-			Area:        uint8(request.Area),
-			X:           uint16(request.X),
-			Y:           uint16(request.Y),
-		})
+		var expertStoreCost *uint32
+		if request.ExpertStoreKind != "" {
+			cost := request.ExpertStoreCost
+			expertStoreCost = &cost
+		}
+		profile := dnfrobotdomain.Profile{
+			ID:                     row.ProfileID,
+			AccountID:              row.AccountID,
+			CharacterID:            provisioned.CharacterID,
+			RobotType:              dnfrobotdomain.RobotType(request.RobotType),
+			ChannelID:              request.ChannelID,
+			AutoStart:              request.AutoStart,
+			Village:                uint8(request.Village),
+			Area:                   uint8(request.Area),
+			X:                      uint16(request.X),
+			Y:                      uint16(request.Y),
+			MoveBoundsSet:          hasMoveBounds,
+			MoveMinX:               moveBounds.MinX,
+			MoveMaxX:               moveBounds.MaxX,
+			MoveMinY:               moveBounds.MinY,
+			MoveMaxY:               moveBounds.MaxY,
+			ExpertStoreKind:        request.ExpertStoreKind,
+			ExpertStoreCost:        expertStoreCost,
+			AutomaticStoreDisabled: true,
+		}
+		if profile.RobotType == dnfrobotdomain.RobotTypePersonalStore {
+			profile.PrivateStoreTitle = dnfrobotdomain.DefaultPersonalStoreTitle
+			profile.PrivateStoreItems = []dnfrobotdomain.PrivateStoreItem{{
+				ItemID: dnfrobotdomain.DefaultPersonalStoreItemID,
+				Count:  dnfrobotdomain.DefaultPersonalStoreItemCount,
+				Price:  dnfrobotdomain.DefaultPersonalStoreItemPrice,
+			}}
+		}
+		runtime, err := manager.Upsert(ctx, profile)
 		if err != nil {
 			row.Error = fmt.Sprintf("character created but profile save failed: %v", err)
 			result.Failed++
@@ -410,6 +698,30 @@ func provisionGMRobotBatch(ctx context.Context, bridge *dnfbridge.Service, manag
 		result.Rows = append(result.Rows, row)
 	}
 	return result
+}
+
+func randomRobotCharacterName(prefix string) (string, error) {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return "", fmt.Errorf("%w: robot character name prefix is empty", dnfbridge.ErrGMRequestInvalid)
+	}
+	var name strings.Builder
+	name.Grow(len(prefix) + 9)
+	name.WriteString(prefix)
+	limit := big.NewInt(int64(len(gmRobotNameCharacters)))
+	for index := 0; index < 3; index++ {
+		value, err := rand.Int(rand.Reader, limit)
+		if err != nil {
+			return "", fmt.Errorf("generate robot character name: %w", err)
+		}
+		name.WriteRune(gmRobotNameCharacters[value.Int64()])
+	}
+	return name.String(), nil
+}
+
+func isRobotCharacterNameConflict(err error) bool {
+	return err != nil && errors.Is(err, dnfbridge.ErrGMRequestInvalid) &&
+		strings.Contains(strings.ToLower(err.Error()), "character name already exists")
 }
 
 func decodeRobotID(w http.ResponseWriter, r *http.Request) (string, bool) {

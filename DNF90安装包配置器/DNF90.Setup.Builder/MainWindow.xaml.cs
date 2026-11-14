@@ -9,11 +9,33 @@ public partial class MainWindow : Window
 {
     private ClientAnalysis? _analysis;
     private bool _busy;
+    private readonly InstallerBuilderSettings? _startupSettings;
     private sealed record LauncherCandidate(string FileName, string FullPath);
 
     public MainWindow()
     {
         InitializeComponent();
+        _startupSettings = InstallerBuilderSettingsStore.Load();
+        if (_startupSettings is not null)
+        {
+            ApplySettings(_startupSettings);
+        }
+        Loaded += MainWindow_Loaded;
+    }
+
+    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (_startupSettings is null ||
+            string.IsNullOrWhiteSpace(_startupSettings.ClientPath) ||
+            !Directory.Exists(_startupSettings.ClientPath))
+        {
+            return;
+        }
+
+        await LoadClientDirectoryAsync(
+            _startupSettings.ClientPath,
+            _startupSettings.LauncherPath,
+            restoring: true);
     }
 
     private async void SelectClientButton_Click(object sender, RoutedEventArgs e)
@@ -37,14 +59,22 @@ public partial class MainWindow : Window
             return;
         }
 
+        await LoadClientDirectoryAsync(dialog.SelectedPath, null, restoring: false);
+    }
+
+    private async Task LoadClientDirectoryAsync(
+        string selectedPath,
+        string? preferredLauncherPath,
+        bool restoring)
+    {
         try
         {
             SetBusy(true);
-            StatusText.Text = "正在扫描客户端…";
-            DetailText.Text = dialog.SelectedPath;
+            StatusText.Text = restoring ? "正在恢复上次参数…" : "正在扫描客户端…";
+            DetailText.Text = selectedPath;
             LauncherComboBox.ItemsSource = null;
             LauncherComboBox.SelectedItem = null;
-            _analysis = await Task.Run(() => ClientPackager.Analyze(dialog.SelectedPath));
+            _analysis = await Task.Run(() => ClientPackager.Analyze(selectedPath));
             ClientPathTextBox.Text = _analysis.ClientRoot;
             ClientSummaryText.Text =
                 $"共 {_analysis.TotalFiles:N0} 个文件，{FormatBytes(_analysis.TotalBytes)}。" +
@@ -61,6 +91,9 @@ public partial class MainWindow : Window
             LauncherComboBox.ItemsSource = launcherCandidates;
             LauncherComboBox.SelectedItem =
                 launcherCandidates.FirstOrDefault(candidate =>
+                    !string.IsNullOrWhiteSpace(preferredLauncherPath) &&
+                    string.Equals(candidate.FullPath, preferredLauncherPath, StringComparison.OrdinalIgnoreCase)) ??
+                launcherCandidates.FirstOrDefault(candidate =>
                     candidate.FileName.Contains("登录器", StringComparison.OrdinalIgnoreCase)) ??
                 (launcherCandidates.Count == 1 ? launcherCandidates[0] : null);
             if (string.IsNullOrWhiteSpace(OutputPathTextBox.Text))
@@ -71,7 +104,8 @@ public partial class MainWindow : Window
                     "DNF90安装包输出");
             }
 
-            if (LauncherComboBox.SelectedItem is LauncherCandidate selectedLauncher)
+            if ((!restoring || string.IsNullOrWhiteSpace(VersionTextBox.Text)) &&
+                LauncherComboBox.SelectedItem is LauncherCandidate selectedLauncher)
             {
                 var productVersion = FileVersionInfo.GetVersionInfo(selectedLauncher.FullPath).ProductVersion;
                 if (!string.IsNullOrWhiteSpace(productVersion))
@@ -81,7 +115,7 @@ public partial class MainWindow : Window
             }
             StatusText.Text = launcherCandidates.Count == 0
                 ? "未找到可选的登录器 EXE"
-                : "客户端扫描完成";
+                : restoring ? "已恢复上次参数" : "客户端扫描完成";
             BuildButton.IsEnabled = LauncherComboBox.SelectedItem is not null;
         }
         catch (Exception ex)
@@ -90,9 +124,12 @@ public partial class MainWindow : Window
             LauncherComboBox.ItemsSource = null;
             LauncherComboBox.SelectedItem = null;
             ClientSummaryText.Text = ex.Message;
-            StatusText.Text = "客户端目录无效";
-            MessageBox.Show(this, ex.Message, "无法读取客户端",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            StatusText.Text = restoring ? "上次保存的客户端目录不可用" : "客户端目录无效";
+            if (!restoring)
+            {
+                MessageBox.Show(this, ex.Message, "无法读取客户端",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         }
         finally
         {
@@ -179,6 +216,15 @@ public partial class MainWindow : Window
             });
 
             var result = await ClientPackager.BuildAsync(_analysis, options, progress);
+            string? settingsWarning = null;
+            try
+            {
+                InstallerBuilderSettingsStore.Save(CaptureSettings());
+            }
+            catch (Exception settingsError)
+            {
+                settingsWarning = "安装包已生成，但保存 INI 参数失败：\n" + settingsError.Message;
+            }
             StatusText.Text = "安装程序生成完成";
             DetailText.Text = result.SetupPath;
             OpenOutputButton.IsEnabled = true;
@@ -186,7 +232,8 @@ public partial class MainWindow : Window
             MessageBox.Show(this,
                 "安装程序已生成：\n\n" + result.SetupPath +
                 "\n\n分卷 ZIP 与安装器位于同一目录：\n" + (result.PackagesDirectory ?? OutputPathTextBox.Text) +
-                "\n\n分发时请保持安装器 EXE 与对应 ZIP 文件在一起。",
+                "\n\n分发时请保持安装器 EXE 与对应 ZIP 文件在一起。" +
+                (settingsWarning is null ? "" : "\n\n" + settingsWarning),
                 "生成成功", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
@@ -266,6 +313,59 @@ public partial class MainWindow : Window
             return ReleaseContent.RemainingOnly;
         }
         return ReleaseContent.Full;
+    }
+
+    private void ApplySettings(InstallerBuilderSettings settings)
+    {
+        if (!string.IsNullOrWhiteSpace(settings.ClientPath))
+        {
+            ClientPathTextBox.Text = settings.ClientPath;
+        }
+        if (!string.IsNullOrWhiteSpace(settings.OutputPath))
+        {
+            OutputPathTextBox.Text = settings.OutputPath;
+        }
+        if (!string.IsNullOrWhiteSpace(settings.Version))
+        {
+            VersionTextBox.Text = settings.Version;
+        }
+        if (!string.IsNullOrWhiteSpace(settings.ImagePackTargetMb))
+        {
+            SplitSizeTextBox.Text = settings.ImagePackTargetMb;
+        }
+        if (!string.IsNullOrWhiteSpace(settings.SetupName))
+        {
+            SetupNameTextBox.Text = settings.SetupName;
+        }
+        if (!string.IsNullOrWhiteSpace(settings.PackagePrefix))
+        {
+            PackagePrefixTextBox.Text = settings.PackagePrefix;
+        }
+        if (!string.IsNullOrWhiteSpace(settings.InstallFolderName))
+        {
+            InstallFolderNameTextBox.Text = settings.InstallFolderName;
+        }
+
+        FullReleaseRadio.IsChecked = settings.ReleaseContent == ReleaseContent.Full;
+        PvfReleaseRadio.IsChecked = settings.ReleaseContent == ReleaseContent.PvfOnly;
+        NpkReleaseRadio.IsChecked = settings.ReleaseContent == ReleaseContent.ImagePacksOnly;
+        AccessoryReleaseRadio.IsChecked = settings.ReleaseContent == ReleaseContent.RemainingOnly;
+    }
+
+    private InstallerBuilderSettings CaptureSettings()
+    {
+        return new InstallerBuilderSettings
+        {
+            ClientPath = _analysis?.ClientRoot ?? ClientPathTextBox.Text.Trim(),
+            LauncherPath = LauncherComboBox.SelectedValue as string ?? "",
+            OutputPath = OutputPathTextBox.Text.Trim(),
+            Version = VersionTextBox.Text.Trim(),
+            ImagePackTargetMb = SplitSizeTextBox.Text.Trim(),
+            SetupName = SetupNameTextBox.Text.Trim(),
+            PackagePrefix = PackagePrefixTextBox.Text.Trim(),
+            InstallFolderName = InstallFolderNameTextBox.Text.Trim(),
+            ReleaseContent = GetSelectedReleaseContent(),
+        };
     }
 
     private void SetBusy(bool busy)

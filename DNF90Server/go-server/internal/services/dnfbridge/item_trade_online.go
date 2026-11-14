@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"longheng.io/server/internal/modules/dnf/dnfenum"
@@ -52,6 +53,7 @@ type onlineItemTrade struct {
 	gold         map[uint16]int64
 	states       map[uint16]byte
 	committing   bool
+	recycle      *robotRecycleTrade
 	// createdAt 用于区分「客户端开窗复位」与「用户真的关窗」两种 state 0。
 	// 客户端在打开交易窗口时会复位窗口,该复位路径会补发 state 0;此时交易
 	// 刚建立且完全为空,因此这类 state 0 必须在时间窗内被忽略。
@@ -518,6 +520,14 @@ func (s *Service) handleOnlineItemTradeState(session *gameSession, state byte) e
 	}
 	trade.states[characterID] = projectedState
 	peerState = trade.states[peerID]
+	robotRecycleAddingDone := trade.recycle != nil && trade.recycle.PlayerID == characterID &&
+		projectedState == currentItemTradeAddingDone && peerState == 0
+	// The robot has no interactive second-confirmation UI. Once the player has
+	// accepted the generated quote, apply the robot's final consent server-side
+	// so the established atomic trade commit can run for both participants.
+	if applyRobotRecycleFinalConsentLocked(trade, characterID, projectedState) {
+		peerState = currentItemTradeReady
+	}
 	ready := projectedState == currentItemTradeReady && peerState == currentItemTradeReady
 	addingDone := projectedState == currentItemTradeAddingDone && peerState == currentItemTradeAddingDone
 	// 双方都提交「添加完成（锁定）」是本侧与对侧报价的最终定稿时刻：此刻双方都不能再改报价，
@@ -539,6 +549,9 @@ func (s *Service) handleOnlineItemTradeState(session *gameSession, state byte) e
 
 	if err := s.sendGameUpperSuccess(session, currentItemTradeReadyMsg, nil); err != nil {
 		return err
+	}
+	if robotRecycleAddingDone {
+		return s.prepareRobotRecycleQuote(trade, characterID)
 	}
 	if replayCounterpartOffers {
 		// 时序：此处 tradeMu 已在上一步释放，满足「发包必须在 tradeMu 释放之后」的硬约束。
@@ -578,6 +591,19 @@ func (s *Service) handleOnlineItemTradeState(session *gameSession, state byte) e
 	return nil
 }
 
+func applyRobotRecycleFinalConsentLocked(trade *onlineItemTrade, playerID uint16, playerState byte) bool {
+	if trade == nil || trade.recycle == nil || trade.recycle.PlayerID != playerID ||
+		playerState != currentItemTradeReady {
+		return false
+	}
+	robotID := trade.recycle.Robot.CharacterID
+	if trade.states[robotID] != currentItemTradeAddingDone {
+		return false
+	}
+	trade.states[robotID] = currentItemTradeReady
+	return true
+}
+
 func (s *Service) commitOnlineItemTrade(trade *onlineItemTrade) error {
 	if trade == nil {
 		return nil
@@ -597,16 +623,53 @@ func (s *Service) commitOnlineItemTrade(trade *onlineItemTrade) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), currentRepositorySnapshotTimeout)
 	defer cancel()
-	result, err := owner.Exchange(ctx,
-		itemtrade.Participant{CharacterID: strconv.Itoa(int(firstID)), AccountID: s.accountIDForCharacter(ctx, repositories, firstID), Offers: itemTradeDomainOffers(firstOffers), Gold: firstGold},
-		itemtrade.Participant{CharacterID: strconv.Itoa(int(secondID)), AccountID: s.accountIDForCharacter(ctx, repositories, secondID), Offers: itemTradeDomainOffers(secondOffers), Gold: secondGold},
-	)
+	firstParticipant := itemtrade.Participant{
+		CharacterID: strconv.Itoa(int(firstID)),
+		AccountID:   s.accountIDForCharacter(ctx, repositories, firstID),
+		Offers:      itemTradeDomainOffers(firstOffers),
+		Gold:        firstGold,
+	}
+	secondParticipant := itemtrade.Participant{
+		CharacterID: strconv.Itoa(int(secondID)),
+		AccountID:   s.accountIDForCharacter(ctx, repositories, secondID),
+		Offers:      itemTradeDomainOffers(secondOffers),
+		Gold:        secondGold,
+	}
+	var result itemtrade.Result
+	if trade.recycle != nil {
+		completionID := strings.TrimSpace(trade.recycle.CompletionID)
+		if completionID == "" {
+			completionID = "robot-recycle-" + trade.recycle.Token
+			trade.recycle.CompletionID = completionID
+		}
+		result, err = owner.ExchangeWithCompletionKey(
+			ctx,
+			completionID,
+			strconv.Itoa(int(trade.recycle.Robot.CharacterID)),
+			firstParticipant,
+			secondParticipant,
+		)
+	} else {
+		result, err = owner.Exchange(ctx, firstParticipant, secondParticipant)
+	}
 	if err != nil {
 		s.logInfo("dnfbridge item trade atomic commit rejected", "first_char_id", firstID, "second_char_id", secondID, "error", err)
 		s.cancelOnlineItemTrade(trade, "atomic_commit_rejected")
 		return nil
 	}
+	if trade.recycle != nil {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), currentRepositorySnapshotTimeout)
+		cleanupErr := s.completeRobotRecycleTrade(cleanupCtx, trade, result)
+		cleanupCancel()
+		if cleanupErr != nil {
+			s.logWarn("dnfbridge robot recycle received-item cleanup failed",
+				"robot_char_id", trade.recycle.Robot.CharacterID, "error", cleanupErr)
+		}
+	}
 	s.clearOnlineItemTrade(trade)
+	if trade.recycle != nil {
+		s.endRobotRecycle(trade.recycle.Robot.ID)
+	}
 	for _, characterID := range []uint16{firstID, secondID} {
 		session, online := s.onlineGameSession(characterID)
 		if !online {
@@ -756,6 +819,7 @@ func (s *Service) cancelOnlineItemTrade(trade *onlineItemTrade, reason string) {
 	firstID, secondID := trade.participants[0], trade.participants[1]
 	firstOffers, secondOffers := snapshotOnlineItemTradeOffers(trade, firstID), snapshotOnlineItemTradeOffers(trade, secondID)
 	firstGold, secondGold := snapshotOnlineItemTradeGold(trade, firstID), snapshotOnlineItemTradeGold(trade, secondID)
+	s.rollbackRobotRecycleTrade(trade)
 	s.clearOnlineItemTrade(trade)
 	for _, row := range []struct {
 		characterID uint16

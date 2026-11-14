@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"reflect"
 	"strings"
 	"time"
 
@@ -60,7 +61,11 @@ func DefaultAutomaticFleetPolicy() dnfrobotdomain.AutomationPolicy {
 			"看看我的小店吧", "休息一会再出发", "祝大家都出好装备", "准备下一次冒险",
 		},
 		MegaphoneIntervalMinSeconds: 900, MegaphoneIntervalMaxSeconds: 1800,
-		MegaphoneProfileModulo:  50,
+		MegaphoneProfileModulo: 50,
+		MegaphoneMessages: []string{
+			"冒险家们好，城镇里见", "需要材料或装备可以来找机器人交易",
+			"祝大家今天也能出好装备",
+		},
 		StoreIntervalMinSeconds: 90, StoreIntervalMaxSeconds: 300,
 		StoreDurationSeconds: 120, StoreConcurrent: 2, StoreMaximumRows: 8,
 		StoreUnitPrice: 10000, StoreTitle: "冒险家商店",
@@ -166,7 +171,7 @@ func (m *Manager) markAutomaticFleetProfileEnsured() time.Duration {
 func (m *Manager) installAutomaticProfile(ctx context.Context, profile dnfrobotdomain.Profile) error {
 	m.mu.RLock()
 	current, found := findProfile(m.config, profile.ID)
-	if found && current == profile {
+	if found && reflect.DeepEqual(current, profile) {
 		m.mu.RUnlock()
 		return nil
 	}

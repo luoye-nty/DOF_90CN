@@ -132,10 +132,91 @@ func TestNormalizeAutomationMegaphone(t *testing.T) {
 	if config.Automation.MegaphoneProfileModulo != 50 {
 		t.Fatalf("megaphone policy = %+v", config.Automation)
 	}
+	if len(config.Automation.MegaphoneMessages) != 1 || config.Automation.MegaphoneMessages[0] != "hello" {
+		t.Fatalf("legacy megaphone messages were not copied from chat: %+v", config.Automation.MegaphoneMessages)
+	}
+	separate, err := Normalize(Config{Automation: AutomationPolicy{
+		ChatMessages:                []string{"local"},
+		MegaphoneMessages:           []string{"global"},
+		MegaphoneIntervalMinSeconds: 60, MegaphoneIntervalMaxSeconds: 120,
+	}})
+	if err != nil {
+		t.Fatalf("Normalize separate megaphone messages: %v", err)
+	}
+	if len(separate.Automation.MegaphoneMessages) != 1 || separate.Automation.MegaphoneMessages[0] != "global" {
+		t.Fatalf("separate megaphone messages = %+v", separate.Automation.MegaphoneMessages)
+	}
 	if _, err := Normalize(Config{Automation: AutomationPolicy{
 		MegaphoneIntervalMinSeconds: 1, MegaphoneIntervalMaxSeconds: 2, MegaphoneProfileModulo: 1,
 	}}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("megaphone without messages error = %v, want ErrInvalid", err)
+	}
+}
+
+func TestNormalizeMigratesLegacyProfilesIntoRobotTypes(t *testing.T) {
+	config, err := Normalize(Config{
+		Automation: AutomationPolicy{
+			MoveIntervalMinSeconds: 8, MoveIntervalMaxSeconds: 30, MoveRadius: 120,
+			ChatIntervalMinSeconds: 60, ChatIntervalMaxSeconds: 180,
+			ChatMessages: []string{"legacy local"},
+		},
+		Recycle: RecyclePolicy{Enabled: true, BuyItems: []RecycleBuyItem{{ItemID: 3037, Price: 10}}},
+		Profiles: []Profile{
+			{ID: "expert", AccountID: "a1", CharacterID: 1, ChannelID: 19, ExpertStoreKind: "disjoint"},
+			{ID: "shop", AccountID: "a2", CharacterID: 2, ChannelID: 19, PrivateStoreTitle: "shop",
+				PrivateStoreItems: []PrivateStoreItem{{ItemID: 3037, Count: 1, Price: 2}}},
+			{ID: "normal", AccountID: "a3", CharacterID: 3, ChannelID: 19},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := make(map[string]Profile, len(config.Profiles))
+	for _, profile := range config.Profiles {
+		byID[profile.ID] = profile
+	}
+	if byID["expert"].RobotType != RobotTypeProfessional || len(byID["expert"].SpeechMessages) != 0 {
+		t.Fatalf("legacy expert migration = %+v", byID["expert"])
+	}
+	if byID["shop"].RobotType != RobotTypePersonalStore || len(byID["shop"].SpeechMessages) != 0 {
+		t.Fatalf("legacy shop migration = %+v", byID["shop"])
+	}
+	normal := byID["normal"]
+	if normal.RobotType != RobotTypeNormal || normal.MoveIntervalMinSeconds != 8 ||
+		normal.MoveIntervalMaxSeconds != 30 || !normal.Recycle.Enabled ||
+		len(normal.SpeechMessages) != 1 || normal.SpeechMessages[0] != "legacy local" {
+		t.Fatalf("legacy normal migration = %+v", normal)
+	}
+}
+
+func TestNormalizeRejectsRobotTypeAndStoreMismatch(t *testing.T) {
+	tests := []Profile{
+		{ID: "normal-expert", AccountID: "a", CharacterID: 1, ChannelID: 19,
+			RobotType: RobotTypeNormal, ExpertStoreKind: "disjoint"},
+		{ID: "professional-empty", AccountID: "b", CharacterID: 2, ChannelID: 19,
+			RobotType: RobotTypeProfessional},
+		{ID: "shop-empty", AccountID: "c", CharacterID: 3, ChannelID: 19,
+			RobotType: RobotTypePersonalStore},
+	}
+	for _, profile := range tests {
+		if _, err := Normalize(Config{Profiles: []Profile{profile}}); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("profile %q mismatch error = %v, want ErrInvalid", profile.ID, err)
+		}
+	}
+}
+
+func TestNormalizeProfileKeepsSpeechModeWithoutMessages(t *testing.T) {
+	config, err := Normalize(Config{Profiles: []Profile{{
+		ID: "speaker", AccountID: "a", CharacterID: 1, ChannelID: 19,
+		RobotType: RobotTypeNormal, SpeechMode: SpeechModeMegaphone,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := config.Profiles[0]
+	if profile.SpeechMode != SpeechModeMegaphone || !profile.MegaphoneEnabled ||
+		profile.SpeechIntervalMinSeconds != 0 || len(profile.SpeechMessages) != 0 {
+		t.Fatalf("speech tag migration = %+v", profile)
 	}
 }
 

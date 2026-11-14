@@ -94,7 +94,7 @@ of `90CN.cpp`; the Anton raid probe merged into this DLL keeps its own constants
 | `kOptionalLuaPluginEnabled` | `true` | `DNF_LUA_PLUGIN` | Loads a sibling `90CNLua.dll` when present. |
 | `kProtocolTraceEnabled` | `false` | `DNF_PROTOCOL_TRACE=1` | Writes packet bodies to `90CN_protocol.log` during bounded transport diagnosis. |
 | `kSocketTraceEnabled` | `false` | `90CN_socket_trace.ini` | Historical socket/item-panel trace hooks. |
-| `kBuiltInRegionName` / `kBuiltInRegionID` | `奇迹暖暖` / `1` | `DNF_REGION_NAME`, `DNF_REGION_ID`, `90CN_region.ini` | The region name the patch publishes. |
+| `kBuiltInRegionName` / `kBuiltInRegionID` | `落叶DNF` / `1` | `DNF_REGION_NAME`, `DNF_REGION_ID`, `90CN_region.ini` | The region name the patch publishes. |
 | `kRemoteAuthTicket` / `kRemoteAuthHost` / `kRemoteAuthPorts` | empty | `DNF_REMOTE_AUTH_*` | LANA remote authentication; empty means disabled. |
 | `kRemoteAuthLease` | empty | `DNF_LID_LEASE` | Launcher identity lease appended to a version 2 LANA answer; forwarded verbatim, never verified here. |
 

@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 
@@ -108,18 +109,10 @@ public sealed class SetupPayload : IDisposable
         ValidateManifest(externalManifest);
 
         var packagesDirectory = ResolvePackagesDirectory(setupPath);
-        foreach (var package in externalManifest.Packages)
-        {
-            var filePath = Path.Combine(packagesDirectory, Path.GetFileName(package.FileName));
-            if (!File.Exists(filePath))
-            {
-                throw new FileNotFoundException("缺少安装分卷：" + package.FileName, filePath);
-            }
-            if (new FileInfo(filePath).Length != package.CompressedBytes)
-            {
-                throw new InvalidDataException("安装分卷大小不正确：" + package.FileName);
-            }
-        }
+        var discoveredPackages = DiscoverExternalPackages(externalManifest, packagesDirectory);
+        externalManifest.Packages = discoveredPackages;
+        externalManifest.TotalUncompressedBytes = discoveredPackages.Sum(x => x.UncompressedBytes);
+        externalManifest.TotalCompressedBytes = discoveredPackages.Sum(x => x.CompressedBytes);
 
         return new SetupPayload(footer, externalManifest, null, packagesDirectory);
     }
@@ -150,6 +143,76 @@ public sealed class SetupPayload : IDisposable
     {
         return Path.GetDirectoryName(Path.GetFullPath(setupPath))
             ?? throw new InvalidOperationException("无法确定安装器所在目录。");
+    }
+
+    private static List<SetupPackageInfo> DiscoverExternalPackages(
+        SetupManifest manifest,
+        string packagesDirectory)
+    {
+        var prefix = (manifest.PackagePrefix ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(prefix))
+        {
+            throw new InvalidDataException("安装清单缺少分卷前缀。");
+        }
+
+        var knownPackages = manifest.Packages
+            .Where(x => !string.IsNullOrWhiteSpace(x.FileName))
+            .ToDictionary(x => Path.GetFileName(x.FileName), StringComparer.OrdinalIgnoreCase);
+        var packageFiles = Directory
+            .EnumerateFiles(packagesDirectory, "*", SearchOption.TopDirectoryOnly)
+            .Where(path => IsMatchingPackageFile(path, prefix))
+            .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (packageFiles.Count == 0)
+        {
+            throw new FileNotFoundException(
+                $"安装器所在目录中没有找到分卷：{prefix}_*.zip", packagesDirectory);
+        }
+
+        var packages = new List<SetupPackageInfo>(packageFiles.Count);
+        foreach (var path in packageFiles)
+        {
+            var fileName = Path.GetFileName(path);
+            knownPackages.TryGetValue(fileName, out var known);
+
+            int fileCount;
+            long uncompressedBytes;
+            using (var stream = new FileStream(
+                       path, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024,
+                       FileOptions.SequentialScan))
+            using (var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false))
+            {
+                var files = archive.Entries
+                    .Where(entry =>
+                        !string.IsNullOrWhiteSpace(entry.FullName) &&
+                        !entry.FullName.EndsWith('/') &&
+                        !entry.FullName.EndsWith('\\'))
+                    .ToList();
+                fileCount = files.Count;
+                uncompressedBytes = files.Sum(entry => entry.Length);
+            }
+
+            packages.Add(new SetupPackageInfo
+            {
+                Id = known?.Id ?? "external:" + fileName,
+                DisplayName = known?.DisplayName ?? Path.GetFileNameWithoutExtension(fileName),
+                FileName = fileName,
+                FileCount = fileCount,
+                UncompressedBytes = uncompressedBytes,
+                CompressedBytes = new FileInfo(path).Length,
+            });
+        }
+        return packages;
+    }
+
+    private static bool IsMatchingPackageFile(string path, string prefix)
+    {
+        if (!string.Equals(Path.GetExtension(path), ".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+        var fileName = Path.GetFileName(path);
+        return fileName.StartsWith(prefix + "_", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void ValidateManifest(SetupManifest manifest)

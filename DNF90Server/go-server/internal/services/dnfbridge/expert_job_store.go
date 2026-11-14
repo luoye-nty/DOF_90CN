@@ -26,6 +26,12 @@ const (
 	currentExpertJobStoreCloseNotification   uint16 = 539
 	currentExpertJobStoreUpdateNotification  uint16 = 544
 	currentExpertJobEnchantOwnerNotification uint16 = 533
+	// The native op538 reader seeds a decomposer store clone's displayed
+	// profession level from a value that is not the durable machine grade. The
+	// compatibility DLL consumes this optional trailer after the native body and
+	// writes the authoritative grade to the created store visual. Native clients
+	// that do not understand the trailer leave it untouched.
+	currentExpertJobStoreGradeTrailerMagic uint32 = 0x47534a45 // "EJSG" on wire
 	// currentExpertJobStoreVisibleAttachMode is the CREATE NOTI's trailing mode
 	// byte. The 86 reference (ExpertJobStorePacketBuilder.ReplaceOwnerAvatarMode,
 	// 副职业架构业务接入规范 五.1) writes 0 and documents the value as:
@@ -292,7 +298,7 @@ func (s *Service) createCurrentExpertJobStore(session *gameSession, request curr
 	switch request.Kind {
 	case currentExpertJobDisjointStoreKind:
 		config, ok := catalog.Disjointer()
-		if !ok || jobType != dnfexpertjob.DisjointerType || request.Cost > config.MaximumStoreCharge {
+		if !ok || jobType != dnfexpertjob.DisjointerType {
 			return nil, dnfexpertjob.ErrMachineInvalid
 		}
 		store.MachineGrade = int(currentExpertJobStatDefault(character.Stats, currentExpertJobMachineGradeStat, 1))
@@ -302,7 +308,7 @@ func (s *Service) createCurrentExpertJobStore(session *gameSession, request curr
 		}
 	case currentExpertJobEnchantStoreKind:
 		config, ok := catalog.Enchanter()
-		if !ok || jobType != dnfexpertjob.EnchanterType || request.Cost > config.MaximumStoreCharge {
+		if !ok || jobType != dnfexpertjob.EnchanterType {
 			return nil, dnfexpertjob.ErrMachineInvalid
 		}
 		store.Endurance = currentExpertJobStatDefault(character.Stats, currentExpertJobMachineEnduranceStat, config.InitialEndurance)
@@ -482,6 +488,10 @@ func buildCurrentExpertJobStoreCreateNotification(store *currentExpertJobStore) 
 	if store.Kind == currentExpertJobEnchantStoreKind {
 		w.writeByte(byte(len(store.Qualifications)))
 		w.writeBytes(store.Qualifications)
+	} else {
+		w.writeUint32(currentExpertJobStoreGradeTrailerMagic)
+		w.writeUint32(uint32(store.MachineGrade))
+		w.writeUint32(uint32(store.Endurance))
 	}
 	return w.bytes()
 }

@@ -211,6 +211,11 @@ func (s *Service) handleOnlineRequestPeer(session *gameSession, typ uint16, body
 	); err != nil {
 		return err
 	}
+	if parsed.Mode == 1 {
+		if handled, err := s.tryAcceptRobotRecycleTrade(session, parsed.TargetID); handled {
+			return err
+		}
+	}
 	if parsed.Mode == 15 {
 		// The town interaction menu reads the target actor's current party link,
 		// not an invite/join flag from the mode-15 selection notice. Refresh that

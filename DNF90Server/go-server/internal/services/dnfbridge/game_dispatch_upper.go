@@ -132,6 +132,13 @@ func (s *Service) handleGameUpper(session *gameSession, raw []byte) error {
 				packet.Body,
 			)
 		}
+		if isCurrentLocationHotkeyEnvelope(packet.Body) {
+			return s.handleCurrentLocationHotkey(
+				session,
+				packet.Header.Classification,
+				packet.Body,
+			)
+		}
 		if isCurrentDebugKillRoomEnvelope(packet.Body) {
 			return s.handleCurrentDebugKillRoom(
 				session,

@@ -2,6 +2,7 @@ package dnfbridge
 
 import (
 	"context"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -68,7 +69,7 @@ func TestEnsureAutomaticRobotProfileCreatesThenReusesNativeCharacter(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first != second || first.CharacterID == 0 || first.AutoStart || first.ChannelID != automaticRobotPreferredChannelID || first.ID != "auto-generated-001" ||
+	if !reflect.DeepEqual(first, second) || first.CharacterID == 0 || first.AutoStart || first.ChannelID != automaticRobotPreferredChannelID || first.ID != "auto-generated-001" ||
 		first.Village != automaticRobotTownID || first.Area != automaticRobotTownAreaID {
 		t.Fatalf("automatic profiles differ: first=%+v second=%+v", first, second)
 	}

@@ -41,6 +41,7 @@ const (
 	privateStoreMaximumRows               = 14
 	privateStoreDisplayRetryGap           = 2 * time.Second
 	privateStoreDisplayMaxAttempts        = 4
+	initialLoginTownID                    = 38
 )
 
 type PrivateStoreRow struct {
@@ -57,19 +58,22 @@ type pendingPrivateStore struct {
 }
 
 type ClientSnapshot struct {
-	State       State     `json:"state"`
-	Endpoint    string    `json:"endpoint,omitempty"`
-	CharacterID uint16    `json:"character_id"`
-	Slot        uint8     `json:"slot,omitempty"`
-	Village     uint8     `json:"village"`
-	Area        uint8     `json:"area"`
-	X           uint16    `json:"x"`
-	Y           uint16    `json:"y"`
-	ReadyAt     time.Time `json:"ready_at,omitempty"`
-	StateSince  time.Time `json:"state_since,omitempty"`
-	LastReceive time.Time `json:"last_receive_at,omitempty"`
-	LastSend    time.Time `json:"last_send_at,omitempty"`
-	LastError   string    `json:"last_error,omitempty"`
+	State             State     `json:"state"`
+	Endpoint          string    `json:"endpoint,omitempty"`
+	CharacterID       uint16    `json:"character_id"`
+	Slot              uint8     `json:"slot,omitempty"`
+	Village           uint8     `json:"village"`
+	Area              uint8     `json:"area"`
+	X                 uint16    `json:"x"`
+	Y                 uint16    `json:"y"`
+	ReadyAt           time.Time `json:"ready_at,omitempty"`
+	StateSince        time.Time `json:"state_since,omitempty"`
+	LastReceive       time.Time `json:"last_receive_at,omitempty"`
+	LastSend          time.Time `json:"last_send_at,omitempty"`
+	LastError         string    `json:"last_error,omitempty"`
+	StoreKind         string    `json:"store_kind,omitempty"`
+	StoreActive       bool      `json:"store_active"`
+	ExpertStoreActive bool      `json:"expert_store_active"`
 }
 
 type Client struct {
@@ -77,28 +81,32 @@ type Client struct {
 	endpoint string
 	secret   []byte
 
-	mu            sync.RWMutex
-	state         State
-	conn          net.Conn
-	selectedID    uint16
-	selectedSlot  uint8
-	village       uint8
-	area          uint8
-	x             uint16
-	y             uint16
-	readyAt       time.Time
-	stateSince    time.Time
-	lastReceive   time.Time
-	lastSend      time.Time
-	lastError     string
-	progressSent  bool
-	selectionSent bool
-	townReadySent bool
-	pendingStore  *pendingPrivateStore
-	storeActive   bool
-	storeCreated  bool
-	storeAttempts int
-	storeRetryAt  time.Time
+	mu                sync.RWMutex
+	state             State
+	conn              net.Conn
+	selectedID        uint16
+	selectedSlot      uint8
+	village           uint8
+	area              uint8
+	x                 uint16
+	y                 uint16
+	readyAt           time.Time
+	stateSince        time.Time
+	lastReceive       time.Time
+	lastSend          time.Time
+	lastError         string
+	progressSent      bool
+	selectionSent     bool
+	townReadySent     bool
+	pendingStore      *pendingPrivateStore
+	storeActive       bool
+	storeCreated      bool
+	storeAttempts     int
+	storeRetryAt      time.Time
+	expertStoreKind   string
+	expertStoreActive bool
+	expertStoreAck    chan error
+	expertCloseAck    chan error
 
 	sendMu    sync.Mutex
 	sequence  uint16
@@ -191,6 +199,7 @@ func (c *Client) Snapshot() ClientSnapshot {
 		State: c.state, Endpoint: c.endpoint, CharacterID: c.selectedID,
 		Slot: c.selectedSlot, Village: c.village, Area: c.area, X: c.x, Y: c.y,
 		ReadyAt: c.readyAt, StateSince: c.stateSince, LastReceive: c.lastReceive, LastSend: c.lastSend, LastError: c.lastError,
+		StoreKind: c.expertStoreKind, StoreActive: c.storeActive || c.expertStoreActive, ExpertStoreActive: c.expertStoreActive,
 	}
 }
 
@@ -244,7 +253,7 @@ func (c *Client) Megaphone(slot int16, message string) error {
 
 func (c *Client) chat(mode uint8, argument uint32, message string) error {
 	c.mu.RLock()
-	ready := c.state == StateTownReady
+	ready := c.state == StateTownReady || c.state == StateStoreReady
 	c.mu.RUnlock()
 	if !ready {
 		return ErrNotReady
@@ -432,10 +441,17 @@ func (c *Client) handle(message packet) error {
 		if err := c.send(1345, []byte{2, 0, 0, 0}); err != nil {
 			return err
 		}
-		area := make([]byte, 16)
-		area[0], area[1] = c.profile.Village, c.profile.Area
-		binary.LittleEndian.PutUint16(area[2:4], c.profile.X)
-		binary.LittleEndian.PutUint16(area[4:6], c.profile.Y)
+		area := buildRobotTownAreaBody(c.profile.Village, c.profile.Area, c.profile.X, c.profile.Y, c.profile.MoveType)
+		if c.profile.Village != initialLoginTownID {
+			area = buildRobotTownAreaBody(
+				c.profile.Village,
+				c.profile.Area,
+				c.profile.X,
+				c.profile.Y,
+				c.profile.MoveType,
+			)
+			binary.LittleEndian.PutUint16(area[7:9], initialLoginTownID)
+		}
 		if err := c.send(36, area); err != nil {
 			return err
 		}
@@ -493,8 +509,51 @@ func (c *Client) handle(message packet) error {
 		c.storeRetryAt = time.Time{}
 		c.setStateLocked(StateTownReady, nil)
 		c.mu.Unlock()
+	case expertStoreCreateOpcode:
+		var ackErr error
+		if len(message.Body) == 0 || message.Body[0] != 1 {
+			code := byte(0)
+			if len(message.Body) > 1 {
+				code = message.Body[1]
+			}
+			ackErr = fmt.Errorf("dnf robot expert store creation was rejected: code %d", code)
+		}
+		c.mu.Lock()
+		ack := c.expertStoreAck
+		c.expertStoreAck = nil
+		if ackErr == nil {
+			c.expertStoreActive = true
+			c.setStateLocked(StateStoreReady, nil)
+		} else {
+			c.expertStoreKind = ""
+			c.setStateLocked(StateTownReady, ackErr)
+		}
+		c.mu.Unlock()
+		if ack != nil {
+			ack <- ackErr
+		}
+	case expertStoreCloseNotification:
+		c.mu.Lock()
+		ack := c.expertCloseAck
+		c.expertCloseAck = nil
+		c.expertStoreKind = ""
+		c.expertStoreActive = false
+		c.setStateLocked(StateTownReady, nil)
+		c.mu.Unlock()
+		if ack != nil {
+			ack <- nil
+		}
 	}
 	return nil
+}
+
+func buildRobotTownAreaBody(town, area byte, x, y uint16, direction byte) []byte {
+	body := make([]byte, 16)
+	body[0], body[1] = town, area
+	binary.LittleEndian.PutUint16(body[2:4], x)
+	binary.LittleEndian.PutUint16(body[4:6], y)
+	body[6] = direction
+	return body
 }
 
 func (c *Client) sendSelectedCharacterOnce() error {

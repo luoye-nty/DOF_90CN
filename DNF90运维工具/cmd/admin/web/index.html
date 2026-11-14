@@ -150,6 +150,8 @@ label input,label select{width:100%}
         <button data-tab="overview" class="active" onclick="tab('overview',this)">概览</button>
         <div class="sect">账号</div>
         <button data-tab="accounts" onclick="tab('accounts',this)">账号查询</button>
+        <div class="sect">机器人</div>
+        <button data-tab="robots" onclick="tab('robots',this)">机器人管理</button>
         <div class="sect">角色</div>
         <button data-tab="character" onclick="tab('character',this)">角色管理</button>
         <div class="sect">发放</div>
@@ -206,6 +208,40 @@ label input,label select{width:100%}
 
 
         <div id="ovMsg" class="msg hide"></div>
+      </section>
+    </div>
+
+    <!-- ============ 机器人管理 ============ -->
+    <div id="tab-robots" class="hide">
+      <section>
+        <h2>机器人状态</h2>
+        <p class="hint">机器人身份现由后台手动创建，不再在服务端启动时自动生成。已经创建的机器人仍可参与目标在线调度。</p>
+        <div class="grid" id="robotStatusGrid"></div>
+        <div class="row" style="margin-top:14px">
+          <button class="ghost" onclick="loadRobotPage()" id="robotRefreshBtn">刷新</button>
+          <button onclick="openRobotCreateDialog()" id="robotCreateOpenBtn">手动批量创建</button>
+          <button class="ghost" onclick="openRobotAmbientSettings()" id="robotAmbientSettingsBtn">批量调度默认值</button>
+          <button class="ghost" onclick="openRobotRecycleSettings()" id="robotRecycleSettingsBtn">回收设置说明</button>
+          <button class="ok" onclick="robotSelectedAction('start')" id="robotBatchStartBtn">选中上线</button>
+          <button class="danger" onclick="robotSelectedAction('stop')" id="robotBatchStopBtn">选中下线</button>
+          <span class="muted" id="robotSelectedInfo">已选 0 个</span>
+        </div>
+        <div id="robotMsg" class="msg hide"></div>
+      </section>
+
+      <section>
+        <h2>机器人列表</h2>
+        <p class="hint">可单独上线或下线；也可以勾选多个机器人后批量操作。</p>
+        <div class="scroll">
+          <table>
+            <thead><tr>
+              <th><input type="checkbox" id="robotCheckAll" onchange="toggleAllRobots(this.checked)"></th>
+              <th>机器人 ID</th><th>类型</th><th>账号</th><th>角色 ID</th><th>频道</th>
+              <th>城镇 / 区域</th><th>坐标</th><th>副职业摊</th><th>状态</th><th>最近错误</th><th>操作</th>
+            </tr></thead>
+            <tbody id="robotRows"><tr><td colspan="12" class="muted">进入页面后自动读取</td></tr></tbody>
+          </table>
+        </div>
       </section>
     </div>
 
@@ -940,7 +976,7 @@ $("pwd").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); })
 
 /* ================= 标签 ================= */
 // 顶部导航可切换的页面清单（新增/删除页面时**必须同步这里**）。
-const TAB_PAGES = ["overview","accounts","character","batch","mail","cera","bans","records"];
+const TAB_PAGES = ["overview","accounts","robots","character","batch","mail","cera","bans","records"];
 
 // 侧边栏 tab 名 ↔ 页面容器 id="tab-<name>" 必须一一对应。
 // ⚠ 曾经踩过的坑：删掉某个页面后忘了从这张表里去掉，$() 返回 null，
@@ -954,6 +990,7 @@ function tab(name, btn){
   });
   if (name === "bans") loadBans();
   if (name === "records") ensureRecordKinds();
+  if (name === "robots" && !$("robotRows").dataset.loaded) loadRobotPage();
   if (name === "accounts" && !$("acctRows").dataset.loaded) searchAccounts();
   if (name === "batch") { onBatchKind(); updateBatchPre(); }
   // 角色管理：进页面自动列出全部账号
@@ -985,6 +1022,1145 @@ async function refreshStatus(){
       ].map(x => '<div class="pill" style="padding:10px 14px">' + x[0] + '<br><b style="font-size:16px">' + x[1] + '</b></div>').join("");
     }
   } catch(e) { $("dot").className = "dot off"; }
+}
+
+/* ================= 机器人 ================= */
+let currentRobots = [];
+const selectedRobots = new Set();
+let robotReferenceData = null;
+let robotAutomationData = null;
+let robotRecycleData = null;
+let robotRecycleProfileID = "";
+let robotRecycleDraftItems = [];
+let robotRecycleItemNames = {};
+let robotRecycleSearchResults = [];
+let robotRelocateID = "";
+let robotCostID = "";
+let robotPrivateStoreID = "";
+let privateStoreDraftItems = [];
+let privateStoreItemNames = {};
+let privateStoreSearchResults = [];
+let robotPrivateStoreCanOpen = false;
+let robotPrivateStoreIsActive = false;
+const robotChannelGroupNames = {
+  granfloris: "格兰之森",
+  sky_catle: "天空之城",
+  alfhlyra: "阿法利亚",
+  north_myre: "诺斯玛尔",
+  antwer: "安特贝鲁峡谷",
+  seatrain: "海上列车",
+  timedoor: "时空之门",
+  powerstation: "能源中心",
+  noblsky: "苍穹贵族号",
+  metro: "地轨中心",
+  ancient: "远古地下城",
+  deathtower: "亡者峡谷",
+  crack: "异次元裂缝",
+  pvp: "决斗场",
+  anton_raid: "安徒恩团队模式",
+  luke_raid: "卢克团队模式"
+};
+
+async function loadRobotReference(){
+  if (robotReferenceData) return robotReferenceData;
+  robotReferenceData = await api("/api/robots/reference");
+  return robotReferenceData;
+}
+
+function robotChannelLabel(id){
+  const channel = ((robotReferenceData && robotReferenceData.channels) || []).find(c => Number(c.id) === Number(id));
+  if (!channel) return String(id ?? "-");
+  const group = String(channel.group || "").toLowerCase();
+  const name = robotChannelGroupNames[group] || channel.group || "频道";
+  return name + " (" + channel.id + ")";
+}
+
+function robotTownLabel(id){
+  const town = ((robotReferenceData && robotReferenceData.towns) || []).find(t => Number(t.id) === Number(id));
+  return town ? town.name + " (" + town.id + ")" : "城镇 " + (id ?? "-");
+}
+
+function robotAreaLabel(townID, areaID){
+  const town = ((robotReferenceData && robotReferenceData.towns) || []).find(t => Number(t.id) === Number(townID));
+  const area = town ? (town.areas || []).find(a => Number(a.id) === Number(areaID)) : null;
+  if (!area) return String(areaID ?? "-");
+  return area.id + " · " + (area.name || "未命名地图");
+}
+
+async function loadRobotPage(){
+  const btn = $("robotRefreshBtn"), msg = $("robotMsg");
+  hide(msg); busy(btn, true, "读取中");
+  try {
+    const [status, rows, reference] = await Promise.all([
+      api("/api/robots/status"),
+      api("/api/robots"),
+      loadRobotReference()
+    ]);
+    robotReferenceData = reference;
+    renderRobotStatus(status || {});
+    currentRobots = Array.isArray(rows) ? rows : [];
+    selectedRobots.clear();
+    renderRobots();
+    $("robotRows").dataset.loaded = "1";
+    updateRobotNextIndex();
+  } catch(e) {
+    show(msg, "机器人模块暂不可用：" + e.message + "\n请确认游戏服务端已启用 DNFBRIDGE_ROBOT_ENABLED=true 并重启。", "err");
+    $("robotRows").innerHTML = '<tr><td colspan="12" class="muted">读取失败</td></tr>';
+  } finally {
+    busy(btn, false);
+  }
+}
+
+function renderRobotStatus(s){
+  const values = [
+    ["已配置", s.configured || 0],
+    ["运行中", s.running || 0],
+    ["城镇就绪", s.town_ready || 0],
+    ["连接中", s.connecting || 0],
+    ["目标在线", s.target_online || 0],
+    ["调度在线", s.scheduler_managed || 0],
+    ["错误", s.errors || 0],
+    ["重连总数", s.reconnects || 0],
+    ["商店就绪", s.store_ready || 0]
+  ];
+  $("robotStatusGrid").innerHTML = values.map(x =>
+    '<div class="pill" style="padding:10px 14px">' + esc(x[0]) +
+    '<br><b style="font-size:16px">' + esc(x[1]) + '</b></div>'
+  ).join("");
+}
+
+function robotStateText(state){
+  const names = {
+    connecting: "连接中", binding: "绑定中", selecting: "选角中",
+    town_ready: "城镇就绪", store_opening: "开店中", store_ready: "商店就绪",
+    store_closing: "关店中", error: "错误", stopped: "已停止"
+  };
+  return names[state] || state || "停止";
+}
+
+function robotTypeLabel(type){
+  return type === "professional" ? "副职业" : (type === "personal_store" ? "个人商店" : "普通");
+}
+
+function robotSpeechLabel(profile){
+  const messages = Array.isArray(profile.speech_messages) ? profile.speech_messages : [];
+  const mode = profile.speech_mode === "megaphone" ? "喇叭喊话" : "普通喊话";
+  return messages.length ? mode : mode + "（未配置）";
+}
+
+function renderRobots(){
+  const rows = $("robotRows");
+  if (!currentRobots.length) {
+    rows.innerHTML = '<tr><td colspan="12" class="muted">还没有机器人，请使用上方批量创建。</td></tr>';
+    updateRobotSelected();
+    return;
+  }
+  rows.innerHTML = currentRobots.map((r, index) => {
+    const p = r.profile || {};
+    const id = String(p.id || "");
+    const checked = selectedRobots.has(id) ? " checked" : "";
+    const running = !!r.running;
+    const state = r.state || (running ? "connecting" : "stopped");
+    const bad = state === "error" || !!r.last_error;
+    const expertKind = p.expert_store_kind || "";
+    const expertLabel = expertKind === "disjoint" ? "分解机" : (expertKind === "enchant" ? "附魔机" : "未设置");
+    const expertCost = Number(p.expert_store_cost ?? 500);
+    const expertActive = !!r.expert_store_active;
+    const expertCell = expertKind
+      ? '<span class="tag ' + (expertActive ? "on" : "warn") + '">' + esc(expertLabel + " · " + expertCost + "金币 · " + (expertActive ? "已开" : "未开")) + "</span>"
+      : '<span class="muted">—</span>';
+    return '<tr class="' + (selectedRobots.has(id) ? "sel" : "") + '">' +
+      '<td><input type="checkbox" data-robot-id="' + esc(id) + '"' + checked + ' onchange="toggleRobot(this)"></td>' +
+      '<td class="mono">' + esc(short(id)) + '</td>' +
+      '<td><span class="tag warn">' + esc(robotTypeLabel(p.robot_type)) + '</span><br><span class="muted">' + esc(robotSpeechLabel(p)) + '</span></td>' +
+      '<td class="mono">' + esc(short(p.account_id)) + '</td>' +
+      '<td>' + esc(p.character_id || "-") + '</td>' +
+      '<td>' + esc(robotChannelLabel(p.channel_id)) + '</td>' +
+      '<td title="' + esc(robotAreaLabel(p.village, p.area)) + '">' + esc(robotTownLabel(p.village) + " / " + robotAreaLabel(p.village, p.area)) + '</td>' +
+      '<td>' + esc((p.x ?? "-") + ", " + (p.y ?? "-")) + '</td>' +
+      '<td>' + expertCell + '</td>' +
+      '<td><span class="tag ' + (bad ? "off" : (state === "town_ready" ? "on" : "warn")) + '">' + esc(robotStateText(state)) + '</span></td>' +
+      '<td class="muted" title="' + esc(r.last_error || "") + '">' + esc(short(r.last_error || "-")) + '</td>' +
+      '<td><button class="ghost small" onclick="openRobotLocationDialog(' + index + ')">改位置</button>' +
+        ' <button class="ghost small" onclick="openRobotBehaviorDialog(' + index + ')">配置</button>' +
+        (p.robot_type === "normal" ? ' <button class="ghost small" onclick="openRobotRecycleSettings(' + index + ')">回收池</button>' : "") +
+        (running
+        ? ' <button class="danger small" onclick="robotAction(' + index + ',\'stop\')">下线</button>'
+        : ' <button class="ok small" onclick="robotAction(' + index + ',\'start\')">上线</button>') +
+        (p.robot_type === "professional" && expertKind ? (expertActive
+          ? ' <button class="ghost small" onclick="robotExpertStoreAction(' + index + ',\'close\')">关摊</button>'
+          : ' <button class="small" onclick="robotExpertStoreAction(' + index + ',\'open\')">开摊</button>') : "") +
+        (p.robot_type === "professional" && expertKind ? ' <button class="ghost small" onclick="openRobotExpertCostDialog(' + index + ')">改费用</button>' : "") +
+        (p.robot_type === "personal_store" ? ' <button class="ghost small" onclick="openRobotPrivateStoreDialog(' + index + ')">个人商店</button>' : "") +
+      '</td></tr>';
+  }).join("");
+  updateRobotSelected();
+}
+
+function toggleRobot(input){
+  const id = input.dataset.robotId;
+  if (input.checked) selectedRobots.add(id); else selectedRobots.delete(id);
+  input.closest("tr").classList.toggle("sel", input.checked);
+  updateRobotSelected();
+}
+
+function toggleAllRobots(checked){
+  selectedRobots.clear();
+  if (checked) currentRobots.forEach(r => { if (r.profile && r.profile.id) selectedRobots.add(r.profile.id); });
+  renderRobots();
+}
+
+function updateRobotSelected(){
+  $("robotSelectedInfo").textContent = "已选 " + selectedRobots.size + " 个";
+  $("robotCheckAll").checked = currentRobots.length > 0 && selectedRobots.size === currentRobots.length;
+}
+
+async function robotAction(index, action){
+  const row = currentRobots[index];
+  if (!row || !row.profile || !row.profile.id) return;
+  const id = row.profile.id;
+  const label = action === "start" ? "上线" : "下线";
+  if (!confirm("确定让机器人【" + id + "】" + label + "？")) return;
+  const msg = $("robotMsg"); hide(msg);
+  try {
+    await api("/api/robots/" + action, {method:"POST", body:JSON.stringify({id})});
+    show(msg, "机器人【" + id + "】" + label + "请求已提交。", "ok");
+    setTimeout(loadRobotPage, 800);
+  } catch(e) { show(msg, label + "失败：" + e.message, "err"); }
+}
+
+async function robotSelectedAction(action){
+  if (!selectedRobots.size) { alert("请先勾选机器人"); return; }
+  const label = action === "start" ? "上线" : "下线";
+  if (!confirm("确定让选中的 " + selectedRobots.size + " 个机器人" + label + "？")) return;
+  const msg = $("robotMsg"); hide(msg);
+  try {
+    const data = await api("/api/robots/batch", {method:"POST", body:JSON.stringify({
+      action, ids:Array.from(selectedRobots)
+    })});
+    show(msg, "批量" + label + "完成：成功 " + (data.succeeded || 0) + "，失败 " + (data.failed || 0), "ok");
+    setTimeout(loadRobotPage, 1000);
+  } catch(e) { show(msg, "批量" + label + "失败：" + e.message, "err"); }
+}
+
+function robotInt(id, fallback){
+  const n = Math.floor(Number($(id).value));
+  return Number.isFinite(n) ? n : fallback;
+}
+
+async function openRobotAmbientSettings(){
+  const btn = $("robotAmbientSettingsBtn"), msg = $("robotMsg"); hide(msg);
+  busy(btn, true, "读取中");
+  try {
+    robotAutomationData = await api("/api/robots/automation") || {};
+  } catch(e) {
+    show(msg, "读取闲逛设置失败：" + e.message, "err");
+    busy(btn, false);
+    return;
+  } finally {
+    busy(btn, false);
+  }
+  const policy = robotAutomationData || {};
+  const moveMin = Number(policy.move_interval_min_seconds) || 8;
+  const moveMax = Number(policy.move_interval_max_seconds) || 30;
+  const moveRadius = Number(policy.move_radius) || 120;
+  const chatMin = Number(policy.chat_interval_min_seconds) || 60;
+  const chatMax = Number(policy.chat_interval_max_seconds) || 180;
+  const megaphoneMin = Number(policy.megaphone_interval_min_seconds) || 0;
+  const megaphoneMax = Number(policy.megaphone_interval_max_seconds) || 0;
+  const messages = Array.isArray(policy.chat_messages) && policy.chat_messages.length
+    ? policy.chat_messages.join("\n")
+    : "今天也要努力冒险\n有人一起刷图吗\n整理一下背包\n城镇里真热闹\n休息一会再出发\n祝大家都出好装备\n准备下一次冒险";
+  const megaphoneMessages = Array.isArray(policy.megaphone_messages) && policy.megaphone_messages.length
+    ? policy.megaphone_messages.join("\n")
+    : "冒险家们好，城镇里见\n需要材料或装备可以来找机器人交易\n祝大家今天也能出好装备";
+  const html =
+    '<h2 style="margin:0 0 4px">闲逛与随机喊话</h2>' +
+    '<p class="hint">此页保留旧版批量调度默认值。单台机器人的实际移动、喊话内容和喊话方式请在机器人列表点击“配置”。服务器喇叭是全服广播，会消耗真实道具并自动补货。</p>' +
+    '<div class="grid">' +
+      '<label>移动最短间隔（秒）<input id="ambientMoveMin" type="number" min="1" max="3600" value="' + moveMin + '"></label>' +
+      '<label>移动最长间隔（秒）<input id="ambientMoveMax" type="number" min="1" max="3600" value="' + moveMax + '"></label>' +
+      '<label>移动半径<input id="ambientMoveRadius" type="number" min="1" max="2000" value="' + moveRadius + '"></label>' +
+      '<label>喊话最短间隔（秒）<input id="ambientChatMin" type="number" min="1" max="86400" value="' + chatMin + '"></label>' +
+      '<label>喊话最长间隔（秒）<input id="ambientChatMax" type="number" min="1" max="86400" value="' + chatMax + '"></label>' +
+      '<label>服务器喇叭最短间隔（秒，0=关闭）<input id="ambientMegaphoneMin" type="number" min="0" max="86400" value="' + megaphoneMin + '"></label>' +
+      '<label>服务器喇叭最长间隔（秒，0=关闭）<input id="ambientMegaphoneMax" type="number" min="0" max="86400" value="' + megaphoneMax + '"></label>' +
+    '</div>' +
+    '<h3 style="margin:18px 0 8px">机器人喊话方式</h3>' +
+    '<div class="scroll" style="max-height:240px"><div id="ambientRobotSpeechRows"></div></div>' +
+    '<label style="display:block;margin-top:14px">普通区域喊话内容（每行一条，最多 64 条）' +
+      '<textarea id="ambientChatMessages" rows="10" style="width:100%;margin-top:6px">' + esc(messages) + '</textarea></label>' +
+    '<label style="display:block;margin-top:14px">服务器喇叭喊话内容（每行一条，最多 64 条）' +
+      '<textarea id="ambientMegaphoneMessages" rows="8" style="width:100%;margin-top:6px">' + esc(megaphoneMessages) + '</textarea></label>' +
+    '<div id="ambientMsg" class="msg hide"></div>' +
+    '<div class="row" style="margin-top:18px">' +
+      '<button class="ghost" onclick="closeModal()">取消</button>' +
+      '<button onclick="saveRobotAmbientSettings()" id="ambientSaveBtn">保存闲逛设置</button>' +
+    '</div>';
+  $("modalBox").innerHTML = html;
+  $("modal").classList.remove("hide");
+  renderRobotSpeechModes();
+}
+
+function renderRobotSpeechModes(){
+  const rows = $("ambientRobotSpeechRows");
+  if (!rows) return;
+  if (!currentRobots.length) {
+    rows.innerHTML = '<p class="muted">当前没有机器人配置。</p>';
+    return;
+  }
+  rows.innerHTML = '<table><thead><tr><th>机器人</th><th>副职业摊</th><th>喊话方式</th></tr></thead><tbody>' +
+    currentRobots.map((row, index) => {
+      const profile = row.profile || {};
+      const id = String(profile.id || "");
+      const expert = profile.expert_store_kind === "disjoint" ? "分解机" :
+        (profile.expert_store_kind === "enchant" ? "附魔机" : "无");
+      const selectedMegaphone = !!profile.megaphone_enabled;
+      return '<tr><td class="mono">' + esc(id) + '</td><td>' + esc(expert) + '</td><td>' +
+        '<select data-robot-id="' + esc(id) + '" style="min-width:160px">' +
+          '<option value="normal"' + (!selectedMegaphone ? " selected" : "") + '>普通区域喊话</option>' +
+          '<option value="megaphone"' + (selectedMegaphone ? " selected" : "") + '>服务器喇叭</option>' +
+        '</select>' +
+        '</td></tr>';
+    }).join("") + '</tbody></table>';
+}
+
+async function saveRobotAmbientSettings(){
+  const btn = $("ambientSaveBtn"), msg = $("ambientMsg"); hide(msg);
+  const moveMin = robotInt("ambientMoveMin", 8);
+  const moveMax = robotInt("ambientMoveMax", 30);
+  const moveRadius = robotInt("ambientMoveRadius", 120);
+  const chatMin = robotInt("ambientChatMin", 60);
+  const chatMax = robotInt("ambientChatMax", 180);
+  const megaphoneMin = robotInt("ambientMegaphoneMin", 0);
+  const megaphoneMax = robotInt("ambientMegaphoneMax", 0);
+  const messages = ($("ambientChatMessages").value || "").split(/\r?\n/)
+    .map(value => value.trim()).filter(Boolean);
+  const megaphoneMessages = ($("ambientMegaphoneMessages").value || "").split(/\r?\n/)
+    .map(value => value.trim()).filter(Boolean);
+  if (moveMin < 1 || moveMax < 1 || moveMin > moveMax || moveMax > 3600) {
+    show(msg, "移动间隔必须满足 1 ≤ 最短 ≤ 最长 ≤ 3600", "err"); return;
+  }
+  if (moveRadius < 1 || moveRadius > 2000) {
+    show(msg, "移动半径必须在 1~2000 之间", "err"); return;
+  }
+  if (chatMin < 1 || chatMax < 1 || chatMin > chatMax || chatMax > 86400) {
+    show(msg, "喊话间隔必须满足 1 ≤ 最短 ≤ 最长 ≤ 86400", "err"); return;
+  }
+  if (megaphoneMin < 0 || megaphoneMax < 0 || megaphoneMin > 86400 || megaphoneMax > 86400 ||
+      (megaphoneMin === 0) !== (megaphoneMax === 0) || megaphoneMin > megaphoneMax) {
+    show(msg, "服务器喇叭需同时填写最短/最长间隔，设为 0/0 可关闭；最大不超过 86400 秒", "err"); return;
+  }
+  if (!messages.length || messages.length > 64 || messages.some(value => value.length > 512)) {
+    show(msg, "喊话内容需为 1~64 条，每条最多 512 字节", "err"); return;
+  }
+  if (!megaphoneMessages.length || megaphoneMessages.length > 64 || megaphoneMessages.some(value => value.length > 512)) {
+    show(msg, "服务器喇叭内容需为 1~64 条，每条最多 512 字节", "err"); return;
+  }
+  const speechModes = Array.from(document.querySelectorAll("#ambientRobotSpeechRows select[data-robot-id]"))
+    .map(select => ({id:select.dataset.robotId, megaphone:select.value === "megaphone"}));
+  const body = Object.assign({}, robotAutomationData || {}, {
+    move_interval_min_seconds: moveMin,
+    move_interval_max_seconds: moveMax,
+    move_radius: moveRadius,
+    chat_interval_min_seconds: chatMin,
+    chat_interval_max_seconds: chatMax,
+    chat_mode: 3,
+    chat_messages: messages,
+    megaphone_interval_min_seconds: megaphoneMin,
+    megaphone_interval_max_seconds: megaphoneMax,
+    megaphone_profile_modulo: megaphoneMin > 0 ? 1 : 0,
+    megaphone_messages: megaphoneMessages
+  });
+  busy(btn, true, "保存中");
+  try {
+    robotAutomationData = await api("/api/robots/automation", {
+      method:"POST", body:JSON.stringify(body)
+    });
+    if (speechModes.length) {
+      await api("/api/robots/speech", {
+        method:"POST", body:JSON.stringify({modes:speechModes})
+      });
+    }
+    closeModal();
+    show($("robotMsg"), "闲逛、区域喊话和服务器喇叭设置已保存。无副职业机器人会按新设置运行。", "ok");
+  } catch(e) {
+    show(msg, "保存闲逛设置失败：" + e.message, "err");
+  } finally { busy(btn, false); }
+}
+
+function openRobotBehaviorDialog(index){
+  const row = currentRobots[index];
+  if (!row || !row.profile) return;
+  const p = row.profile;
+  const type = p.robot_type || "normal";
+  const messages = Array.isArray(p.speech_messages) ? p.speech_messages.join("\n") : "";
+  const moveMin = Number(p.move_interval_min_seconds) || 0;
+  const moveMax = Number(p.move_interval_max_seconds) || 0;
+  const moveRadius = Number(p.move_radius) || 0;
+  const speechMin = Number(p.speech_interval_min_seconds) || (messages ? 60 : 0);
+  const speechMax = Number(p.speech_interval_max_seconds) || (messages ? 180 : 0);
+  let typeHint = "普通机器人参与随机移动和回收交易。";
+  if (type === "professional") typeHint = "副职业机器人上线后到设定位置自动开分解机或附魔机，不参与移动和交易。";
+  if (type === "personal_store") typeHint = "个人商店机器人上线后到设定位置自动开个人商店，不参与移动和交易。商品配置请使用该行的“个人商店”按钮。";
+  const html =
+    '<h2 style="margin:0 0 4px">机器人配置</h2>' +
+    '<p class="hint">机器人：<b>' + esc(p.id || "") + '</b>，类型：' + esc(robotTypeLabel(type)) + '。' + esc(typeHint) + '</p>' +
+    (type === "normal" ?
+      '<h3 style="margin:16px 0 8px">移动配置</h3><div class="grid">' +
+        '<label>移动最短间隔（秒）<input id="behaviorMoveMin" type="number" min="0" max="3600" value="' + moveMin + '"></label>' +
+        '<label>移动最长间隔（秒）<input id="behaviorMoveMax" type="number" min="0" max="3600" value="' + moveMax + '"></label>' +
+        '<label>移动半径<input id="behaviorMoveRadius" type="number" min="0" max="2000" value="' + moveRadius + '"></label>' +
+      '</div>' : '') +
+    '<h3 style="margin:16px 0 8px">喊话配置</h3><div class="grid">' +
+      '<label>喊话方式<select id="behaviorSpeechMode">' +
+        '<option value="normal"' + (p.speech_mode !== "megaphone" ? " selected" : "") + '>普通区域喊话</option>' +
+        '<option value="megaphone"' + (p.speech_mode === "megaphone" ? " selected" : "") + '>服务器喇叭</option>' +
+      '</select></label>' +
+      '<label>喊话最短间隔（秒）<input id="behaviorSpeechMin" type="number" min="0" max="86400" value="' + speechMin + '"></label>' +
+      '<label>喊话最长间隔（秒）<input id="behaviorSpeechMax" type="number" min="0" max="86400" value="' + speechMax + '"></label>' +
+    '</div>' +
+    '<label style="display:block;margin-top:12px">喊话内容（留空=不喊话，每行一条，最多64条）' +
+      '<textarea id="behaviorSpeechMessages" rows="8" style="width:100%;margin-top:6px">' + esc(messages) + '</textarea></label>' +
+    '<div id="behaviorMsg" class="msg hide"></div>' +
+    '<div class="row" style="margin-top:18px">' +
+      '<button class="ghost" onclick="closeModal()">取消</button>' +
+      '<button onclick="saveRobotBehaviorConfig(' + index + ')" id="behaviorSaveBtn">保存机器人配置</button>' +
+    '</div>';
+  $("modalBox").innerHTML = html;
+  $("modal").classList.remove("hide");
+}
+
+async function saveRobotBehaviorConfig(index){
+  const row = currentRobots[index];
+  if (!row || !row.profile) return;
+  const btn = $("behaviorSaveBtn"), msg = $("behaviorMsg"); hide(msg);
+  const profile = JSON.parse(JSON.stringify(row.profile));
+  const speechMessages = ($("behaviorSpeechMessages").value || "").split(/\r?\n/)
+    .map(value => value.trim()).filter(Boolean);
+  const speechMin = robotInt("behaviorSpeechMin", 0);
+  const speechMax = robotInt("behaviorSpeechMax", 0);
+  if (speechMessages.length > 64 || speechMessages.some(value => value.length > 512)) {
+    show(msg, "喊话内容最多64条，每条最多512字节", "err"); return;
+  }
+  if (speechMessages.length && (speechMin < 1 || speechMax < 1 || speechMin > speechMax || speechMax > 86400)) {
+    show(msg, "配置喊话内容时必须填写有效间隔", "err"); return;
+  }
+  if (profile.robot_type === "normal") {
+    const moveMin = robotInt("behaviorMoveMin", 0);
+    const moveMax = robotInt("behaviorMoveMax", 0);
+    const moveRadius = robotInt("behaviorMoveRadius", 0);
+    if ((moveMin === 0) !== (moveMax === 0) || moveMin < 0 || moveMax > 3600 || moveMin > moveMax ||
+        moveRadius < 0 || moveRadius > 2000) {
+      show(msg, "移动间隔必须同时为0或满足 1 ≤ 最短 ≤ 最长 ≤ 3600，半径不超过2000", "err"); return;
+    }
+    profile.move_interval_min_seconds = moveMin;
+    profile.move_interval_max_seconds = moveMax;
+    profile.move_radius = moveMin > 0 ? (moveRadius || 80) : 0;
+  }
+  profile.speech_mode = $("behaviorSpeechMode").value;
+  profile.speech_messages = speechMessages;
+  profile.speech_interval_min_seconds = speechMessages.length ? speechMin : 0;
+  profile.speech_interval_max_seconds = speechMessages.length ? speechMax : 0;
+  busy(btn, true, "保存中");
+  try {
+    await api("/api/robots/profile", {method:"POST", body:JSON.stringify(profile)});
+    closeModal();
+    show($("robotMsg"), "机器人【" + profile.id + "】配置已保存。", "ok");
+    setTimeout(loadRobotPage, 1000);
+  } catch(e) {
+    show(msg, "保存机器人配置失败：" + e.message, "err");
+  } finally { busy(btn, false); }
+}
+
+async function openRobotRecycleSettings(index){
+  const btn = $("robotRecycleSettingsBtn"), msg = $("robotMsg"); hide(msg);
+  let row = Number.isInteger(index) ? currentRobots[index] : null;
+  if (!row) {
+    const normalRows = currentRobots.filter(item => (item.profile || {}).robot_type === "normal");
+    if (normalRows.length === 1) row = normalRows[0];
+  }
+  if (!row || !row.profile || row.profile.robot_type !== "normal") {
+    show(msg, "请在普通机器人所在行点击“回收池”，副职业和个人商店机器人不参与回收交易。", "err");
+    return;
+  }
+  robotRecycleProfileID = String(row.profile.id || "");
+  busy(btn, true, "读取中");
+  try {
+    robotRecycleData = await api("/api/robots/recycle?" + new URLSearchParams({id:robotRecycleProfileID}).toString()) || {};
+  } catch(e) {
+    show(msg, "读取回收设置失败：" + e.message, "err");
+    busy(btn, false);
+    return;
+  } finally {
+    busy(btn, false);
+  }
+  robotRecycleDraftItems = (robotRecycleData.buy_items || []).map(item => ({
+    item_id:Number(item.item_id) || 0,
+    price:Number(item.price) || 0,
+    name:""
+  }));
+  robotRecycleItemNames = {};
+  robotRecycleSearchResults = [];
+  const html =
+    '<h2 style="margin:0 0 4px">机器人交易回收设置</h2>' +
+    '<p class="hint">机器人：<b>' + esc(robotRecycleProfileID) + '</b></p>' +
+    '<p class="hint">玩家点击无副职业、城镇就绪且未摆摊的机器人交易后，机器人自动接单。金币池命中的物品按“数量 × 单价”支付；未命中金币池的装备进入 +5、同等级、-5 级及稀有度交换；未命中金币池的材料仅在本次已有回收项目时免费收走。</p>' +
+    '<label style="display:block;margin-bottom:14px"><input id="robotRecycleEnabled" type="checkbox"' + (robotRecycleData.enabled ? " checked" : "") + '> 启用机器人交易回收</label>' +
+    '<div class="row" style="margin-bottom:12px">' +
+      '<input id="robotRecycleSearch" placeholder="搜索道具名称或 ID" style="flex:1;min-width:220px" onkeydown="if(event.key===\'Enter\')searchRobotRecycleCatalog()">' +
+      '<button class="ghost" onclick="searchRobotRecycleCatalog()" id="robotRecycleSearchBtn">搜索道具</button>' +
+    '</div>' +
+    '<div id="robotRecycleSearchRows" class="scroll" style="max-height:220px;margin-bottom:16px"><span class="muted">搜索后点击“加入金币池”</span></div>' +
+    '<h3 style="margin:6px 0">金币回收池</h3>' +
+    '<div id="robotRecycleDraftRows" class="scroll" style="max-height:340px"></div>' +
+    '<div id="robotRecycleMsg" class="msg hide"></div>' +
+    '<div class="row" style="margin-top:18px">' +
+      '<button class="ghost" onclick="closeModal()">取消</button>' +
+      '<button onclick="saveRobotRecycleSettings()" id="robotRecycleSaveBtn">保存回收设置</button>' +
+    '</div>';
+  $("modalBox").innerHTML = html;
+  $("modal").classList.remove("hide");
+  renderRobotRecycleDraft();
+  const ids = robotRecycleDraftItems.map(item => item.item_id).filter(id => id > 0);
+  await Promise.all(ids.slice(0, 300).map(async id => {
+    try {
+      const detail = await api("/api/items/" + id);
+      robotRecycleItemNames[id] = String((detail.item && detail.item.name) || "");
+    } catch(e) {}
+  }));
+  renderRobotRecycleDraft();
+}
+
+async function searchRobotRecycleCatalog(){
+  const btn = $("robotRecycleSearchBtn"), rows = $("robotRecycleSearchRows");
+  const q = ($("robotRecycleSearch").value || "").trim();
+  if (!q) { rows.textContent = "请输入道具名称或 ID"; return; }
+  busy(btn, true, "搜索中");
+  try {
+    const data = await api("/api/items?" + new URLSearchParams({q, limit:"30", offset:"0"}).toString());
+    const items = data.items || [];
+    robotRecycleSearchResults = items;
+    rows.innerHTML = items.length
+      ? '<table><thead><tr><th>ID</th><th>名称</th><th>类型</th><th></th></tr></thead><tbody>' +
+        items.map((item, index) => '<tr><td class="mono">' + item.item_id + '</td><td>' + esc(item.name || "") +
+          '</td><td>' + esc((item.kind || "") + (item.equipment_type ? "/" + item.equipment_type : "")) +
+          '</td><td><button class="small" onclick="addRobotRecycleSearchResult(' + index + ')">加入金币池</button></td></tr>').join("") +
+        '</tbody></table>'
+      : '<span class="muted">没有找到道具</span>';
+  } catch(e) {
+    rows.textContent = "搜索失败：" + e.message;
+  } finally {
+    busy(btn, false);
+  }
+}
+
+function addRobotRecycleSearchResult(index){
+  const item = robotRecycleSearchResults[index];
+  if (!item) return;
+  const itemID = Number(item.item_id) || 0;
+  if (!itemID) return;
+  if (robotRecycleDraftItems.some(row => Number(row.item_id) === itemID)) {
+    alert("该道具已经在金币回收池中");
+    return;
+  }
+  if (robotRecycleDraftItems.length >= 2000) {
+    alert("金币回收池最多配置 2000 种道具");
+    return;
+  }
+  robotRecycleItemNames[itemID] = String(item.name || "");
+  robotRecycleDraftItems.push({item_id:itemID, price:1, name:String(item.name || "")});
+  renderRobotRecycleDraft();
+}
+
+function renderRobotRecycleDraft(){
+  const rows = $("robotRecycleDraftRows");
+  if (!rows) return;
+  if (!robotRecycleDraftItems.length) {
+    rows.innerHTML = '<p class="muted">金币池为空。此时机器人只处理装备交换，纯材料交易会回复“我不收这个”。</p>';
+    return;
+  }
+  rows.innerHTML = '<table><thead><tr><th>道具 ID</th><th>名称</th><th>回收单价（金币）</th><th></th></tr></thead><tbody>' +
+    robotRecycleDraftItems.map((item, index) => {
+      const name = item.name || robotRecycleItemNames[item.item_id] || "";
+      return '<tr><td class="mono">' + item.item_id + '</td><td>' + esc(name || "（未读取到名称）") +
+        '</td><td><input type="number" min="1" step="1" value="' + item.price +
+        '" oninput="updateRobotRecycleDraftPrice(' + index + ',this.value)" style="width:150px"></td>' +
+        '<td><button class="danger small" onclick="removeRobotRecycleDraft(' + index + ')">删除</button></td></tr>';
+    }).join("") + '</tbody></table>';
+}
+
+function updateRobotRecycleDraftPrice(index, value){
+  const item = robotRecycleDraftItems[index];
+  if (item) item.price = Math.max(0, Math.floor(Number(value) || 0));
+}
+
+function removeRobotRecycleDraft(index){
+  robotRecycleDraftItems.splice(index, 1);
+  renderRobotRecycleDraft();
+}
+
+async function saveRobotRecycleSettings(){
+  const btn = $("robotRecycleSaveBtn"), msg = $("robotRecycleMsg"); hide(msg);
+  if (robotRecycleDraftItems.some(item => !item.item_id || !item.price)) {
+    show(msg, "金币回收池中的道具 ID 和单价必须大于 0", "err");
+    return;
+  }
+  const body = {
+    id: robotRecycleProfileID,
+    enabled: !!$("robotRecycleEnabled").checked,
+    buy_items: robotRecycleDraftItems.map(item => ({
+      item_id:Number(item.item_id),
+      price:Number(item.price)
+    }))
+  };
+  busy(btn, true, "保存中");
+  try {
+    robotRecycleData = await api("/api/robots/recycle", {method:"POST", body:JSON.stringify(body)}) || body;
+    closeModal();
+    show($("robotMsg"), "机器人交易回收设置已保存并即时生效。", "ok");
+  } catch(e) {
+    show(msg, "保存回收设置失败：" + e.message, "err");
+  } finally {
+    busy(btn, false);
+  }
+}
+
+async function openRobotCreateDialog(){
+  try {
+    await Promise.all([loadClassTree(), loadRobotReference()]);
+    const jobOptions = (classTreeData || []).map((c, i) =>
+      '<option value="' + i + '">' + esc(c.name) + '</option>').join("");
+    const channels = (robotReferenceData && robotReferenceData.channels) || [];
+    const towns = (robotReferenceData && robotReferenceData.towns) || [];
+    const channelOptions = channels.map(c => {
+      const group = String(c.group || "").toLowerCase();
+      const name = robotChannelGroupNames[group] || c.group || "频道";
+      return '<option value="' + c.id + '"' + (Number(c.id) === 19 ? " selected" : "") + '>' +
+        esc(name + " (" + c.id + ")") + '</option>';
+    }).join("");
+    const townOptions = towns.map(t =>
+      '<option value="' + t.id + '"' + (Number(t.id) === 38 ? " selected" : "") + '>' +
+      esc(t.name + " (" + t.id + ")") + '</option>').join("");
+    if (!channelOptions || !townOptions) throw new Error("频道或城镇目录为空");
+    const html =
+      '<h2 style="margin:0 0 4px">手动批量创建机器人</h2>' +
+      '<p class="hint">一次创建 1~64 个机器人。职业和成长类型使用中文名称，实际提交时自动换算为 job 和 grow_type。</p>' +
+      '<div class="grid">' +
+        '<label>创建数量<input id="rbCount" type="number" min="1" max="64" value="1"></label>' +
+        '<label>起始序号<input id="rbStartIndex" type="number" min="1" value="1"></label>' +
+        '<label>账号前缀<input id="rbAccountPrefix" value="manual-robot"></label>' +
+        '<label>角色名前缀<input id="rbNamePrefix" value="机器人"></label>' +
+        '<label>机器人 ID 前缀<input id="rbProfilePrefix" value="manual-robot"></label>' +
+        '<label>机器人类型<select id="rbRobotType" onchange="syncRobotCreateTypeFields()">' +
+          '<option value="normal" selected>普通机器人</option>' +
+          '<option value="personal_store">个人商店机器人</option>' +
+          '<option value="professional">副职业机器人</option>' +
+        '</select></label>' +
+        '<label>频道<select id="rbChannel">' + channelOptions + '</select></label>' +
+        '<label>职业大类<select id="rbJobSel" onchange="syncRobotCreateGrowOptions()">' + jobOptions + '</select></label>' +
+        '<label>转职<select id="rbGrowSel" onchange="syncRobotCreateAwakeOptions()"></select></label>' +
+        '<label>觉醒<select id="rbAwakeSel"></select></label>' +
+        '<label>等级<input id="rbLevel" type="number" min="1" max="90" value="90"></label>' +
+        '<label>城镇<select id="rbVillage" onchange="syncRobotCreateAreaOptions()">' + townOptions + '</select></label>' +
+        '<label>区域<select id="rbArea" onchange="syncRobotCreateSafePoint()"></select></label>' +
+        '<label>X 坐标<input id="rbX" type="number" min="0" max="65535" value="600"></label>' +
+        '<label>Y 坐标<input id="rbY" type="number" min="0" max="65535" value="300"></label>' +
+        '<label>创建后自动上线<select id="rbAutoStart"><option value="false" selected>否</option><option value="true">是</option></select></label>' +
+        '<span id="rbProfessionalFields" style="display:none">' +
+          '<label>副职业类型<select id="rbExpertStoreKind"><option value="" selected>请选择</option><option value="disjoint">分解机</option><option value="enchant">附魔机</option></select></label>' +
+          '<label>副职业费用<input id="rbExpertStoreCost" type="number" value="500"></label>' +
+        '</span>' +
+      '</div>' +
+      '<p id="rbPersonalStoreHint" class="hint" style="display:none">个人商店机器人默认配置：道具 3037 无色小晶块，数量 10000，单价 200。上线后自动到配置位置开商店。</p>' +
+      '<div class="row" style="margin-top:14px"><span class="muted">角色名自动生成“前缀 + 随机三个汉字”；X/Y 会随区域自动填入安全坐标，也可以直接填入插件获取或手动指定的任意坐标。</span></div>' +
+      '<div id="rbCreateMsg" class="msg hide"></div>' +
+      '<div class="row" style="margin-top:18px">' +
+        '<button class="ghost" onclick="closeModal()">取消</button>' +
+        '<button onclick="createRobots()" id="rbCreateBtn">批量创建</button>' +
+      '</div>';
+    $("modalBox").innerHTML = html;
+    $("modal").classList.remove("hide");
+    syncRobotCreateGrowOptions();
+    syncRobotCreateAreaOptions();
+    syncRobotCreateTypeFields();
+    updateRobotNextIndex();
+  } catch(e) {
+    alert("职业树加载失败：" + e.message);
+  }
+}
+
+function syncRobotCreateTypeFields(){
+  const type = $("rbRobotType").value;
+  $("rbProfessionalFields").style.display = type === "professional" ? "contents" : "none";
+  $("rbPersonalStoreHint").style.display = type === "personal_store" ? "block" : "none";
+}
+
+function robotReferenceTown(id){
+  return ((robotReferenceData && robotReferenceData.towns) || []).find(t => Number(t.id) === Number(id)) || null;
+}
+
+function syncRobotCreateAreaOptions(){
+  const town = robotReferenceTown($("rbVillage").value);
+  const area = $("rbArea");
+  if (!town){ area.innerHTML = ""; return; }
+  area.innerHTML = (town.areas || []).map(item =>
+    '<option value="' + item.id + '">' + esc(item.id + " · " + (item.name || "未命名地图") + (item.kind ? " [" + item.kind + "]" : "")) + '</option>').join("");
+  syncRobotCreateSafePoint();
+}
+
+function syncRobotCreateSafePoint(){
+  const town = robotReferenceTown($("rbVillage").value);
+  if (!town) return;
+  const area = (town.areas || []).find(item => Number(item.id) === Number($("rbArea").value));
+  if (!area) return;
+  $("rbX").value = area.safe_x ?? 0;
+  $("rbY").value = area.safe_y ?? 0;
+}
+
+function robotCreateClass(){
+  const idx = Number($("rbJobSel").value) || 0;
+  return (classTreeData || [])[idx] || null;
+}
+
+function syncRobotCreateGrowOptions(){
+  const cls = robotCreateClass();
+  const grow = $("rbGrowSel");
+  if (!cls){ grow.innerHTML = ""; $("rbAwakeSel").innerHTML = ""; return; }
+  grow.innerHTML = (cls.grows || []).map(g =>
+    '<option value="' + g.first_grow + '">' + esc(g.name) + '</option>').join("");
+  syncRobotCreateAwakeOptions();
+}
+
+function syncRobotCreateAwakeOptions(){
+  const cls = robotCreateClass();
+  const awake = $("rbAwakeSel");
+  if (!cls){ awake.innerHTML = ""; return; }
+  const first = Number($("rbGrowSel").value) || 0;
+  const grow = (cls.grows || []).find(g => g.first_grow === first);
+  let options = '<option value="0">未觉醒</option>';
+  if (grow && grow.awakes) {
+    options += grow.awakes.map((name, index) =>
+      '<option value="' + (index + 1) + '">' + esc(name) + '</option>').join("");
+  }
+  awake.innerHTML = options;
+}
+
+async function createRobots(){
+  const btn = $("rbCreateBtn"), msg = $("rbCreateMsg"); hide(msg);
+  const cls = robotCreateClass();
+  if (!cls) { show(msg, "职业树还没有加载完成", "err"); return; }
+  const first = Number($("rbGrowSel").value) || 0;
+  const awakening = Number($("rbAwakeSel").value) || 0;
+  const growType = (awakening << 4) | first;
+  const growName = (cls.grows.find(g => g.first_grow === first) || {}).name || String(first);
+  const awakeName = awakening > 0
+    ? ($("rbAwakeSel").selectedOptions[0] ? $("rbAwakeSel").selectedOptions[0].textContent : String(awakening))
+    : "未觉醒";
+  const body = {
+    robot_type: $("rbRobotType").value,
+    count: robotInt("rbCount", 1),
+    start_index: robotInt("rbStartIndex", 1),
+    account_prefix: $("rbAccountPrefix").value.trim(),
+    name_prefix: $("rbNamePrefix").value.trim(),
+    profile_prefix: $("rbProfilePrefix").value.trim(),
+    channel_id: robotInt("rbChannel", 19),
+    auto_start: $("rbAutoStart").value === "true",
+    job: cls.job_id,
+    grow_type: growType,
+    level: robotInt("rbLevel", 90),
+    village: robotInt("rbVillage", 38),
+    area: robotInt("rbArea", 0),
+    x: robotInt("rbX", 600),
+    y: robotInt("rbY", 300),
+    expert_store_kind: $("rbExpertStoreKind").value,
+    expert_store_cost: robotInt("rbExpertStoreCost", 500)
+  };
+  if (body.count < 1 || body.count > 64) { show(msg, "创建数量必须在 1~64 之间", "err"); return; }
+  if (!body.account_prefix || !body.name_prefix || !body.profile_prefix) {
+    show(msg, "账号前缀、角色名前缀和机器人 ID 前缀不能为空", "err"); return;
+  }
+  if (body.robot_type === "professional" && !body.expert_store_kind) {
+    show(msg, "副职业机器人必须选择分解机或附魔机", "err"); return;
+  }
+  if (body.robot_type !== "professional") {
+    body.expert_store_kind = "";
+    body.expert_store_cost = 0;
+  }
+  if (!confirm("确定批量创建 " + body.count + " 个机器人？\n\n账号示例：" +
+      body.account_prefix + "-" + String(body.start_index).padStart(3,"0") +
+      "\n角色名规则：" + body.name_prefix + " + 随机三个汉字（重名自动重试）" +
+      "\n类型：" + ({normal:"普通机器人",personal_store:"个人商店机器人",professional:"副职业机器人"}[body.robot_type] || body.robot_type) +
+      "\n职业：" + cls.name + " / " + growName + " / " + awakeName)) return;
+  busy(btn, true, "创建中");
+  try {
+    const data = await api("/api/robots/provision-batch", {method:"POST", body:JSON.stringify(body)});
+    const failed = Array.isArray(data.rows) ? data.rows.filter(r => r.error) : [];
+    let text = "批量创建完成：成功 " + (data.succeeded || 0) + "，失败 " + (data.failed || 0);
+    if (failed.length) text += "\n失败示例：" + failed.slice(0,5).map(r => r.index + ": " + r.error).join("；");
+    show(msg, text, failed.length ? "info" : "ok");
+    $("rbStartIndex").value = body.start_index + body.count;
+    setTimeout(loadRobotPage, 1000);
+  } catch(e) {
+    show(msg, "批量创建失败：" + e.message, "err");
+  } finally { busy(btn, false); }
+}
+
+async function openRobotLocationDialog(index){
+  const row = currentRobots[index];
+  if (!row || !row.profile || !row.profile.id) return;
+  const p = row.profile;
+  try {
+    await loadRobotReference();
+    robotRelocateID = String(p.id);
+    const channels = (robotReferenceData && robotReferenceData.channels) || [];
+    const towns = (robotReferenceData && robotReferenceData.towns) || [];
+    const channelOptions = channels.map(c => {
+      const group = String(c.group || "").toLowerCase();
+      const name = robotChannelGroupNames[group] || c.group || "频道";
+      return '<option value="' + c.id + '"' + (Number(c.id) === Number(p.channel_id) ? " selected" : "") + '>' +
+        esc(name + " (" + c.id + ")") + '</option>';
+    }).join("");
+    const townOptions = towns.map(t =>
+      '<option value="' + t.id + '"' + (Number(t.id) === Number(p.village) ? " selected" : "") + '>' +
+      esc(t.name + " (" + t.id + ")") + '</option>').join("");
+    if (!channelOptions || !townOptions) throw new Error("频道或城镇目录为空");
+    const html =
+      '<h2 style="margin:0 0 4px">修改机器人位置</h2>' +
+      '<p class="hint">机器人：<b>' + esc(p.id) + '</b>。在线机器人保存后仅该机器人会自动下线，并通过新频道重新上线。</p>' +
+      '<div class="grid">' +
+        '<label>频道<select id="rlChannel">' + channelOptions + '</select></label>' +
+        '<label>城镇<select id="rlVillage" onchange="syncRobotLocationAreaOptions()">' + townOptions + '</select></label>' +
+        '<label>区域<select id="rlArea" onchange="syncRobotLocationSafePoint()"></select></label>' +
+        '<label>X 坐标<input id="rlX" type="number" min="0" max="65535"></label>' +
+        '<label>Y 坐标<input id="rlY" type="number" min="0" max="65535"></label>' +
+      '</div>' +
+      '<div class="row" style="margin-top:12px">' +
+        '<label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
+          '<input id="rlAutoStart" type="checkbox" style="width:auto"> 服务端重启后自动上线（仅影响下次启动）' +
+        '</label>' +
+      '</div>' +
+      '<div class="row" style="margin-top:10px"><span class="muted">切换城镇或区域会填入安全坐标；X/Y 可以任意修改，不再校验是否位于 PVF 可移动矩形内。</span></div>' +
+      '<div id="rlMsg" class="msg hide"></div>' +
+      '<div class="row" style="margin-top:18px">' +
+        '<button class="ghost" onclick="closeModal()">取消</button>' +
+        '<button onclick="relocateRobot()" id="rlSaveBtn">保存位置</button>' +
+      '</div>';
+    $("modalBox").innerHTML = html;
+    $("modal").classList.remove("hide");
+    syncRobotLocationAreaOptions(p.area);
+    $("rlX").value = p.x ?? 0;
+    $("rlY").value = p.y ?? 0;
+    $("rlAutoStart").checked = !!p.auto_start;
+  } catch(e) {
+    alert("位置编辑窗口加载失败：" + e.message);
+  }
+}
+
+function syncRobotLocationAreaOptions(selectedArea){
+  const town = robotReferenceTown($("rlVillage").value);
+  const area = $("rlArea");
+  if (!town){ area.innerHTML = ""; return; }
+  const preferred = selectedArea === undefined ? null : Number(selectedArea);
+  area.innerHTML = (town.areas || []).map(item =>
+    '<option value="' + item.id + '"' + (preferred !== null && Number(item.id) === preferred ? " selected" : "") + '>' +
+    esc(item.id + " · " + (item.name || "未命名地图") + (item.kind ? " [" + item.kind + "]" : "")) + '</option>').join("");
+  syncRobotLocationSafePoint();
+}
+
+function syncRobotLocationSafePoint(){
+  const town = robotReferenceTown($("rlVillage").value);
+  if (!town) return;
+  const area = (town.areas || []).find(item => Number(item.id) === Number($("rlArea").value));
+  if (!area) return;
+  $("rlX").value = area.safe_x ?? 0;
+  $("rlY").value = area.safe_y ?? 0;
+}
+
+async function relocateRobot(){
+  const btn = $("rlSaveBtn"), msg = $("rlMsg"); hide(msg);
+  const id = robotRelocateID;
+  if (!id) { show(msg, "当前机器人 ID 无效，请关闭窗口后重试", "err"); return; }
+  const body = {
+    id,
+    channel_id: robotInt("rlChannel", 0),
+    village: robotInt("rlVillage", 0),
+    area: robotInt("rlArea", 0),
+    x: robotInt("rlX", 0),
+    y: robotInt("rlY", 0),
+    move_type: 0,
+    auto_start: !!$("rlAutoStart").checked
+  };
+  if (body.channel_id <= 0 || body.village < 0 || body.area < 0 || body.x < 0 || body.y < 0) {
+    show(msg, "频道、城镇、区域和坐标不能为空", "err"); return;
+  }
+  if (!confirm("确定修改机器人【" + id + "】的位置？\n\n频道：" + body.channel_id +
+      "\n城镇：" + body.village + "\n区域：" + body.area +
+      "\n坐标：" + body.x + ", " + body.y +
+      "\n服务端重启后自动上线：" + (body.auto_start ? "是" : "否") +
+      "\n\n在线机器人会自动重新上线。")) return;
+  busy(btn, true, "保存中");
+  try {
+    await api("/api/robots/relocate", {method:"POST", body:JSON.stringify(body)});
+    closeModal();
+    robotRelocateID = "";
+    show($("robotMsg"), "机器人【" + id + "】位置和重启上线设置已保存。", "ok");
+    setTimeout(loadRobotPage, 1000);
+  } catch(e) {
+    show(msg, "修改位置失败：" + e.message, "err");
+  } finally { busy(btn, false); }
+}
+
+function openRobotExpertCostDialog(index){
+  const row = currentRobots[index];
+  if (!row || !row.profile || !row.profile.id) return;
+  const p = row.profile;
+  if (!p.expert_store_kind) { alert("该机器人没有设置副职业摊类型"); return; }
+  robotCostID = String(p.id);
+  const kind = p.expert_store_kind === "disjoint" ? "分解机" : "附魔机";
+  const cost = Number(p.expert_store_cost ?? 500);
+  const html =
+    '<h2 style="margin:0 0 4px">修改副职业摊费用</h2>' +
+    '<p class="hint">机器人：<b>' + esc(p.id) + '</b>，类型：' + esc(kind) + '。费用保存后，下次开摊以及低耐久自动恢复后的重新开摊会使用新费用。</p>' +
+    '<div class="grid"><label>每次服务费用（金币）<input id="expertCostValue" type="number" value="' + cost + '"></label></div>' +
+    '<div id="expertCostMsg" class="msg hide"></div>' +
+    '<div class="row" style="margin-top:18px">' +
+      '<button class="ghost" onclick="closeModal()">取消</button>' +
+      '<button onclick="saveRobotExpertCost()" id="expertCostSaveBtn">保存费用</button>' +
+    '</div>';
+  $("modalBox").innerHTML = html;
+  $("modal").classList.remove("hide");
+}
+
+async function saveRobotExpertCost(){
+  const btn = $("expertCostSaveBtn"), msg = $("expertCostMsg"); hide(msg);
+  const id = robotCostID;
+  const cost = robotInt("expertCostValue", 0);
+  if (!id) { show(msg, "当前机器人 ID 无效，请关闭窗口后重试", "err"); return; }
+  if (!Number.isSafeInteger(cost) || cost < 0 || cost > 4294967295) {
+    show(msg, "费用必须是 0~4294967295 之间的整数", "err");
+    return;
+  }
+  if (!confirm("确定将机器人【" + id + "】的副职业摊费用设置为 " + cost + " 金币？")) return;
+  busy(btn, true, "保存中");
+  try {
+    await api("/api/robots/expert-store/cost", {method:"POST", body:JSON.stringify({id, cost})});
+    closeModal();
+    robotCostID = "";
+    show($("robotMsg"), "机器人【" + id + "】副职业摊费用已修改为 " + cost + " 金币。", "ok");
+    setTimeout(loadRobotPage, 800);
+  } catch(e) {
+    show(msg, "修改副职业摊费用失败：" + e.message, "err");
+  } finally { busy(btn, false); }
+}
+
+async function openRobotPrivateStoreDialog(index){
+  const row = currentRobots[index];
+  if (!row || !row.profile || !row.profile.id) return;
+  const p = row.profile;
+  robotPrivateStoreID = String(p.id);
+  robotPrivateStoreIsActive = !!row.store_active && !row.expert_store_active;
+  robotPrivateStoreCanOpen = !!row.running && row.state === "town_ready" && !row.store_active;
+  privateStoreDraftItems = (p.private_store_items || []).map(item => ({
+    item_id: Number(item.item_id || 0),
+    count: Number(item.count || 1),
+    price: Number(item.price || 1),
+    name: ""
+  }));
+  privateStoreItemNames = {};
+  const title = p.private_store_title || "机器人商店";
+  const html =
+    '<h2 style="margin:0 0 4px">个人商店配置</h2>' +
+    '<p class="hint">机器人：<b>' + esc(p.id) + '</b>。最多配置 14 种商品；每种商品单独设置初始数量和单价。开摊时会自动补足配置数量。</p>' +
+    '<div class="grid"><label>商店标题<input id="privateStoreTitle" value="' + esc(title) + '"></label></div>' +
+    '<section style="margin-top:14px"><h2>搜索道具</h2><div class="row">' +
+      '<input id="privateStoreSearch" placeholder="输入道具名称或 ID" style="min-width:260px">' +
+      '<button class="ghost" onclick="searchPrivateStoreCatalog()" id="privateStoreSearchBtn">搜索</button>' +
+      '<button class="ghost" onclick="addPrivateStoreBlankRow()">手动添加空行</button>' +
+    '</div><div id="privateStoreSearchRows" class="muted" style="margin-top:8px">输入名称或 ID 后搜索</div></section>' +
+    '<section style="margin-top:14px"><h2>售卖商品</h2><div style="overflow:auto"><table><thead><tr>' +
+      '<th>商品 ID</th><th>名称</th><th>数量</th><th>单价（金币）</th><th></th>' +
+    '</tr></thead><tbody id="privateStoreRows"></tbody></table></div></section>' +
+    '<div id="privateStoreMsg" class="msg hide"></div>' +
+    '<div class="row" style="margin-top:18px">' +
+      '<button class="ghost" onclick="closeModal()">取消</button>' +
+      '<button class="ghost" onclick="saveRobotPrivateStore(false)" id="privateStoreSaveBtn">仅保存配置</button>' +
+      (robotPrivateStoreIsActive
+        ? '<button class="danger" onclick="closeRobotPrivateStoreFromDialog()" id="privateStoreCloseBtn">关闭当前商店</button>'
+        : (robotPrivateStoreCanOpen ? '<button onclick="saveRobotPrivateStore(true)" id="privateStoreOpenBtn">保存并开摊</button>' : "")) +
+    '</div>' +
+    (robotPrivateStoreIsActive ? '<p class="muted">当前个人商店正在营业。修改后的配置会保存，下一次开摊生效。</p>' :
+      (!robotPrivateStoreCanOpen ? '<p class="muted">机器人需要先在城镇就绪；如果正在经营副职业摊，请先关闭副职业摊。</p>' : ""));
+  $("modalBox").innerHTML = html;
+  $("modal").classList.remove("hide");
+  renderPrivateStoreDraft();
+  const ids = privateStoreDraftItems.map(item => item.item_id).filter(id => id > 0);
+  await Promise.all(ids.map(async id => {
+    try {
+      const detail = await api("/api/items/" + id);
+      privateStoreItemNames[id] = String((detail.item && detail.item.name) || "");
+    } catch(e) {}
+  }));
+  renderPrivateStoreDraft();
+}
+
+async function searchPrivateStoreCatalog(){
+  const btn = $("privateStoreSearchBtn"), rows = $("privateStoreSearchRows");
+  const q = ($("privateStoreSearch").value || "").trim();
+  if (!q) { rows.textContent = "请输入道具名称或 ID"; return; }
+  busy(btn, true, "搜索中");
+  try {
+    const data = await api("/api/items?" + new URLSearchParams({q, limit:"30", offset:"0"}).toString());
+    const items = data.items || [];
+    privateStoreSearchResults = items;
+    rows.innerHTML = items.length ? '<table><thead><tr><th>ID</th><th>名称</th><th>类型</th><th></th></tr></thead><tbody>' +
+      items.map((it, index) => '<tr><td class="mono">' + it.item_id + '</td><td>' + esc(it.name || "") + '</td><td>' +
+        esc((it.kind || "") + (it.equipment_type ? "/" + it.equipment_type : "")) + '</td><td>' +
+        '<button class="small" onclick="addPrivateStoreSearchResult(' + index + ')">加入商品</button>' +
+        '</td></tr>').join("") + '</tbody></table>' :
+      '<span class="muted">没有找到道具</span>';
+  } catch(e) {
+    rows.textContent = "搜索失败：" + e.message;
+  } finally { busy(btn, false); }
+}
+
+function addPrivateStoreSearchResult(index){
+  const item = privateStoreSearchResults[index];
+  if (item) addPrivateStoreSearchItem(item);
+}
+
+function addPrivateStoreSearchItem(item){
+  const itemID = Number(item.item_id || 0);
+  if (!itemID) return;
+  if (privateStoreDraftItems.some(row => Number(row.item_id) === itemID)) {
+    alert("该商品已经在售卖列表中");
+    return;
+  }
+  if (privateStoreDraftItems.length >= 14) { alert("最多配置 14 种商品"); return; }
+  privateStoreItemNames[itemID] = String(item.name || "");
+  privateStoreDraftItems.push({item_id:itemID, count:1, price:1, name:String(item.name || "")});
+  renderPrivateStoreDraft();
+}
+
+function addPrivateStoreBlankRow(){
+  if (privateStoreDraftItems.length >= 14) { alert("最多配置 14 种商品"); return; }
+  privateStoreDraftItems.push({item_id:0, count:1, price:1, name:""});
+  renderPrivateStoreDraft();
+}
+
+function updatePrivateStoreDraft(index, field, value){
+  const item = privateStoreDraftItems[index];
+  if (!item) return;
+  item[field] = Math.max(0, Math.floor(Number(value) || 0));
+  if (field === "item_id") item.name = privateStoreItemNames[item.item_id] || "";
+}
+
+function removePrivateStoreDraft(index){
+  privateStoreDraftItems.splice(index, 1);
+  renderPrivateStoreDraft();
+}
+
+function renderPrivateStoreDraft(){
+  const rows = $("privateStoreRows");
+  if (!rows) return;
+  rows.innerHTML = privateStoreDraftItems.length ? privateStoreDraftItems.map((item, index) =>
+    '<tr>' +
+      '<td><input type="number" min="1" style="width:120px" value="' + (item.item_id || "") + '" onchange="updatePrivateStoreDraft(' + index + ',\'item_id\',this.value)"></td>' +
+      '<td>' + esc(item.name || privateStoreItemNames[item.item_id] || "—") + '</td>' +
+      '<td><input type="number" min="1" style="width:90px" value="' + (item.count || 1) + '" onchange="updatePrivateStoreDraft(' + index + ',\'count\',this.value)"></td>' +
+      '<td><input type="number" min="1" style="width:120px" value="' + (item.price || 1) + '" onchange="updatePrivateStoreDraft(' + index + ',\'price\',this.value)"></td>' +
+      '<td><button class="danger small" onclick="removePrivateStoreDraft(' + index + ')">删除</button></td>' +
+    '</tr>').join("") : '<tr><td colspan="5" class="muted">还没有商品，请搜索添加</td></tr>';
+}
+
+function privateStoreRequestPayload(){
+  const id = robotPrivateStoreID;
+  const title = ($("privateStoreTitle").value || "").trim();
+  const items = privateStoreDraftItems.map(item => ({
+    item_id: Number(item.item_id || 0),
+    count: Number(item.count || 0),
+    price: Number(item.price || 0)
+  }));
+  if (!id || !title || items.length < 1 || items.length > 14) throw new Error("请填写标题并配置 1~14 种商品");
+  const seen = new Set();
+  for (const item of items) {
+    if (!Number.isSafeInteger(item.item_id) || item.item_id <= 0 || item.item_id > 4294967295 ||
+        !Number.isSafeInteger(item.count) || item.count <= 0 || item.count > 4294967295 ||
+        !Number.isSafeInteger(item.price) || item.price <= 0 || item.price > 4294967295) {
+      throw new Error("商品 ID、数量和单价必须是有效的正整数");
+    }
+    if (seen.has(item.item_id)) throw new Error("同一个商品不能重复配置");
+    seen.add(item.item_id);
+  }
+  return {id, title, items};
+}
+
+async function saveRobotPrivateStore(openNow){
+  const btn = $(openNow ? "privateStoreOpenBtn" : "privateStoreSaveBtn");
+  const msg = $("privateStoreMsg"); hide(msg);
+  let body;
+  try { body = privateStoreRequestPayload(); }
+  catch(e) { show(msg, e.message, "err"); return; }
+  if (!confirm((openNow ? "保存配置并开启" : "保存") + "机器人【" + body.id + "】的个人商店？\n\n商品：" +
+      body.items.length + " 种")) return;
+  busy(btn, true, openNow ? "开摊中" : "保存中");
+  try {
+    await api("/api/robots/private-store/config", {method:"POST", body:JSON.stringify(body)});
+    if (openNow) {
+      await api("/api/robots/private-store/open", {method:"POST", body:JSON.stringify(body)});
+    }
+    closeModal();
+    show($("robotMsg"), "个人商店配置已保存" + (openNow ? "，开摊请求已提交。" : "。"), "ok");
+    setTimeout(loadRobotPage, 1200);
+  } catch(e) {
+    show(msg, (openNow ? "开启个人商店失败：" : "保存配置失败：") + e.message, "err");
+  } finally { busy(btn, false); }
+}
+
+async function closeRobotPrivateStoreFromDialog(){
+  const id = robotPrivateStoreID;
+  if (!id || !confirm("确定关闭机器人【" + id + "】的个人商店？")) return;
+  const btn = $("privateStoreCloseBtn"), msg = $("privateStoreMsg"); hide(msg);
+  busy(btn, true, "关闭中");
+  try {
+    await api("/api/robots/private-store/close", {method:"POST", body:JSON.stringify({id})});
+    closeModal();
+    show($("robotMsg"), "机器人【" + id + "】个人商店关闭请求已提交。", "ok");
+    setTimeout(loadRobotPage, 800);
+  } catch(e) {
+    show(msg, "关闭个人商店失败：" + e.message, "err");
+  } finally { busy(btn, false); }
+}
+
+async function robotExpertStoreAction(index, action){
+  const row = currentRobots[index];
+  if (!row || !row.profile || !row.profile.id) return;
+  const id = row.profile.id;
+  const cost = Number(row.profile.expert_store_cost ?? 500);
+  const label = action === "open" ? "开摊" : "关摊";
+  if (!confirm("确定让机器人【" + id + "】" + label + (action === "open" ? "，当前费用 " + cost + " 金币" : "") + "？")) return;
+  const msg = $("robotMsg"); hide(msg);
+  try {
+    const body = action === "open" ? {id, cost} : {id};
+    await api("/api/robots/expert-store/" + action, {method:"POST", body:JSON.stringify(body)});
+    show(msg, "机器人【" + id + "】" + label + "请求已提交。", "ok");
+    setTimeout(loadRobotPage, 1000);
+  } catch(e) { show(msg, label + "失败：" + e.message, "err"); }
+}
+
+function updateRobotNextIndex(){
+  const prefixEl = $("rbProfilePrefix");
+  if (!prefixEl) return;
+  const prefix = prefixEl.value.trim();
+  if (!prefix || !currentRobots.length) return;
+  let max = 0;
+  currentRobots.forEach(r => {
+    const id = String(r.profile && r.profile.id || "");
+    if (!id.startsWith(prefix + "-")) return;
+    const n = Number(id.slice(prefix.length + 1));
+    if (Number.isFinite(n) && n > max) max = n;
+  });
+  if (max > 0) $("rbStartIndex").value = max + 1;
 }
 
 /* ================= 角色管理（左侧账号 + 角色列表） ================= */

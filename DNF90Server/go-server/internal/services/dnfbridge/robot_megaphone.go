@@ -49,8 +49,8 @@ func (s *Service) PrepareRobotServerMegaphone(ctx context.Context, accountID str
 		if loadErr != nil {
 			return loadErr
 		}
-		if !found || strings.TrimSpace(character.AccountID) != accountID || !strings.HasPrefix(accountID, automaticRobotAccountPrefix+"-") {
-			return fmt.Errorf("%w: automatic robot megaphone identity mismatch", ErrGMRequestInvalid)
+		if !found || strings.TrimSpace(character.AccountID) != accountID {
+			return fmt.Errorf("%w: robot megaphone identity mismatch", ErrGMRequestInvalid)
 		}
 		inventory, found, loadErr := inventories.Load(ctx, characterKey)
 		if loadErr != nil {

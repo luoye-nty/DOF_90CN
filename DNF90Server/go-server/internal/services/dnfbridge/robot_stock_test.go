@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
+	"longheng.io/server/internal/modules/dnf/premium"
 	dnfrepo "longheng.io/server/internal/modules/dnf/repository"
 	dnfrepomemory "longheng.io/server/internal/modules/dnf/repository/memory"
+	dnfrobotdomain "longheng.io/server/internal/modules/dnf/robot"
 )
 
 func TestGMStockRobotCharacterCommitsTradeableRowsForPrivateStore(t *testing.T) {
@@ -87,16 +90,57 @@ func TestEnsureRobotPrivateStoreStockFillsMissingRowsOnce(t *testing.T) {
 	}
 }
 
+func TestConfiguredRobotPrivateStoreUsesExactQuantityAndPerRowPrice(t *testing.T) {
+	service, repositories := newGMRobotStockTestService(t)
+	items := []dnfrobotdomain.PrivateStoreItem{{ItemID: 7001, Count: 50, Price: 1234}}
+	rows, err := service.PrepareRobotPrivateStoreRows(context.Background(), "robot-account", 7, items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Price != 1234 || rows[0].WireValue != 50 {
+		t.Fatalf("configured rows = %+v", rows)
+	}
+	rows, err = service.PrepareRobotPrivateStoreRows(context.Background(), "robot-account", 7, items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Price != 1234 || rows[0].WireValue != 50 {
+		t.Fatalf("replenished configured rows = %+v", rows)
+	}
+	inventory, found, err := repositories.Inventory.Load(context.Background(), "7")
+	if err != nil || !found || len(inventory.Slots) != 1 {
+		t.Fatalf("configured stock inventory found=%t err=%v rows=%+v", found, err, inventory.Slots)
+	}
+	account, found, err := repositories.Account.Load(context.Background(), "robot-account")
+	if err != nil || !found || !premium.Active(account, premium.TypePrivateStore, time.Now().UTC()) {
+		t.Fatalf("private-store license active=%t found=%t err=%v", premium.Active(account, premium.TypePrivateStore, time.Now().UTC()), found, err)
+	}
+}
+
+func TestConfiguredRobotPrivateStoreAllowsItemWithoutDeclaredStackLimit(t *testing.T) {
+	service, _ := newGMRobotStockTestService(t)
+	rows, err := service.PrepareRobotPrivateStoreRows(context.Background(), "robot-account", 7, []dnfrobotdomain.PrivateStoreItem{
+		{ItemID: 3037, Count: 10_000, Price: 500},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].WireValue != 10_000 || rows[0].Price != 500 {
+		t.Fatalf("undeclared-stack-limit rows = %+v", rows)
+	}
+}
+
 func newGMRobotStockTestService(t *testing.T) (*Service, dnfrepo.Group) {
 	t.Helper()
 	catalog, err := newPVFDungeonDropCatalog(dungeonDropCatalogTestSource{
 		"monster/monster.lst":     "",
-		"stackable/stackable.lst": "7001 `material/trade.stk`\n7002 `material/account.stk`\n",
+		"stackable/stackable.lst": "7001 `material/trade.stk`\n7002 `material/account.stk`\n3037 `material/cube.stk`\n",
 		"equipment/equipment.lst": "",
 		// 交易白名单是 {free, sealing}，夹具里「可交易」用 `[free]` 表达；
 		// account.stk 仍是 `[account]`，继续覆盖「不可交易不可补货」那一支。
 		"stackable/material/trade.stk":   "[name] `Trade Material`\n[stackable type] `[material]`\n[stack limit] 999\n[attach type] `[free]`\n",
 		"stackable/material/account.stk": "[name] `Account Material`\n[stackable type] `[material]`\n[stack limit] 999\n[attach type] `[account]`\n",
+		"stackable/material/cube.stk":    "[name] `Undeclared Stack Limit`\n[stackable type] `[material]`\n[attach type] `[free]`\n",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -104,6 +148,9 @@ func newGMRobotStockTestService(t *testing.T) (*Service, dnfrepo.Group) {
 	repositories := dnfrepomemory.NewMemoryGroup()
 	ctx := context.Background()
 	if err := repositories.Character.Save(ctx, dnfrepo.CharacterRecord{CharacterID: "7", AccountID: "robot-account", Name: "Robot"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repositories.Account.Save(ctx, dnfrepo.AccountRecord{AccountID: "robot-account", State: "active"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := repositories.Inventory.Save(ctx, dnfrepo.InventoryRecord{CharacterID: "7", Slots: map[string]dnfrepo.ItemStack{}}); err != nil {

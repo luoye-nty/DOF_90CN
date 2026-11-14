@@ -50,6 +50,23 @@ func (s *Service) sendUpperCSharpSelectInit(session *gameSession, request []byte
 		return fmt.Errorf("reconcile selected character game-option visibility: %w", err)
 	}
 	s.bindGameSessionCharacter(session, charID)
+	// Cleanup must run before the select-character stream is materialized.
+	// Otherwise the initial userinfo/mode0 projection can still carry an
+	// expired name tag even though the item list removes it moments later.
+	s.sweepExpiredInventoryItems(
+		session, "select_character_before_csharp_init",
+	)
+	if repositories, ok := s.repositoryGroup(); ok && repositories.Character != nil {
+		if refreshed, found, loadErr := repositories.Character.Load(
+			ctx, strconv.Itoa(int(charID)),
+		); loadErr != nil {
+			s.logGameEvent(session, "game-upper-select-character-post-expiry-reload-failed",
+				"char_id", charID, "error", loadErr)
+		} else if found {
+			selectedCharacter = refreshed
+			hasSelectedCharacter = true
+		}
+	}
 	sameCharacterReturn := sameCharacterReturnSelect(session, charID)
 	if activationErr := s.reconcileCurrentPremiumInventoryBeforeList(
 		ctx,

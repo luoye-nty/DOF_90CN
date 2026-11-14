@@ -27,7 +27,7 @@ try {
     Invoke-DotNet @(
         "publish", $InstallerProject,
         "-c", "Release",
-        "-r", "win-x64",
+        "-r", "win-x86",
         "--self-contained", "true",
         "-p:PublishSingleFile=true",
         "-p:DebugType=None",
@@ -43,7 +43,7 @@ try {
     Invoke-DotNet @(
         "publish", $BuilderProject,
         "-c", "Release",
-        "-r", "win-x64",
+        "-r", "win-x86",
         "--self-contained", "true",
         "-p:PublishSingleFile=true",
         "-p:DebugType=None",
