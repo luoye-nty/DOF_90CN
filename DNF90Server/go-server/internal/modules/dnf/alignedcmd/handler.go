@@ -838,6 +838,7 @@ type StackableUseResolution struct {
 	ItemID                       int64
 	PVFPath                      string
 	StackableType                string
+	EquipmentInheritance         *EquipmentInheritanceResolution
 	TPBook                       *TPBookResolution
 	PetFeedEffectDurationSeconds int64
 	PetFeedSkillChargePercent    int64
@@ -893,6 +894,35 @@ type StackableUseResolution struct {
 	// 这一族的效果是**服务端量**（深渊派对史诗掉落率），所以服务端必须自己记窗口，
 	// 见 internal/modules/dnf/statbuff。
 	StatChangePotion *StatChangePotionResolution
+}
+
+// EquipmentInheritanceMaterial is one configured inheritance cost. ItemID 0
+// is the character gold wallet; every other id must resolve to a stackable in
+// the active PVF.
+type EquipmentInheritanceMaterial struct {
+	ItemID int64
+	Count  int64
+}
+
+// EquipmentInheritanceEquipment is the active-PVF metadata needed to validate
+// the backpack source and worn target without trusting inventory Extra fields.
+type EquipmentInheritanceEquipment struct {
+	ItemID          int64
+	PVFPath         string
+	EquipmentType   string
+	Rarity          int64
+	MinimumLevel    int64
+	PeriodEquipment bool
+}
+
+type EquipmentInheritanceEquipmentResolver func(itemID int64) (EquipmentInheritanceEquipment, error)
+
+// EquipmentInheritanceResolution is the complete coupon contract read from
+// the item's optional server-side sections.
+type EquipmentInheritanceResolution struct {
+	Materials            []EquipmentInheritanceMaterial
+	ExcludedEquipmentIDs []int64
+	ResolveEquipment     EquipmentInheritanceEquipmentResolver
 }
 
 // StatChangePotionResolution 是一张城镇增益药剂的解析结果。
@@ -1426,7 +1456,11 @@ type Result struct {
 	// so a refused reuse is observable; the restore path after a relog is the
 	// item-state notification 172 list (item_cooltime_projection.go).
 	ItemCooltimeStates []ItemCooltimeState
-	UpperResponses     []UpperResponse
+	// ClientNotice asks the bridge to open one client-native announcement
+	// window after the command response. It is used for feature-specific
+	// failure text that the originating opcode only carries as a silent code.
+	ClientNotice   *ClientNoticeProjection
+	UpperResponses []UpperResponse
 	// AreaBroadcastResponses are current-client notifications delivered to
 	// other players who already share the requester's concrete town area. The
 	// requester receives its own feedback through UpperResponses.
@@ -1498,6 +1532,10 @@ type Result struct {
 	// row without consuming it. dnfbridge arms its op1340 continuation after
 	// the successful op44 response has been written.
 	CustomAbilityGroupConverter *CustomAbilityGroupConverterProjection
+}
+
+type ClientNoticeProjection struct {
+	Text string
 }
 
 type CustomAbilityGroupConverterProjection struct {

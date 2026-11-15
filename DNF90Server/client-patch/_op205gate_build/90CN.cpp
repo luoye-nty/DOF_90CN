@@ -1687,6 +1687,7 @@ void CheckTradeWindowClosed();
 // Guild compatibility consumers. They are defined with the guild installs further
 // down the file, but the class0 / class1 dispatch proxies above poll them.
 bool TryConsumePrivateGuildRanking(int packet);
+bool TryConsumePrivateClientNotice(int packet);
 bool TryConsumeGuildWarErrorNotice(int packet);
 bool QueueDungeonSelectFatiguePrompt(unsigned char reason);
 bool RejectLuaGameCommand(const char* reason);
@@ -3927,6 +3928,7 @@ int __stdcall ProxyTownCopresenceClass0Dispatch(int a1, int packet)
     if (TryConsumePrivateCombatPowerAffixes(packet)) return 1;
     if (TryConsumePrivateMoodProjection(packet)) return 1;
     if (TryConsumePrivateGuildRanking(packet)) return 1;
+    if (TryConsumePrivateClientNotice(packet)) return 1;
     if (TryConsumePrivateBossMutationDecision(packet)) return 1;
 
     TraceTownCopresenceDispatchState("before", packet);
@@ -6181,6 +6183,7 @@ bool IsCurrentPremiumContractID(uint32_t templateID)
     // etc/premiumlist_new.etc [item] rows.  Keeping the allow-list in this
     // current-client compatibility unit prevents an all-stackable bypass.
     static const uint32_t kContractIDs[] = {
+        202611001, // equipment inheritance coupon: native right-click emits no op44
         30, 31, 32, 33, 34, 43, 44, 45, 46,
         193, 194, 196, 198, 720, 741, 742, 743, 744, 820, 901, 917, 920,
         2660012, 2660013, 2660050, 2660051, 2660290, 2660354, 2660358,
@@ -6405,7 +6408,16 @@ bool SendCurrentPremiumContractUse(const CurrentContractSelection& selection)
         writeU16(value(), kUseStackableOpcode);
         writeI16(value(), static_cast<uint16_t>(selection.slot));
         writeU8(value(), kMainInventoryListType);
-        writeU32(value(), selection.identity);
+        // Current imported/custom stackables keep the stable template id in
+        // their raw +0x0E identity field.  The native contract identity helper
+        // reads a UI-selection value for some item classes and returned unstable
+        // values for the inheritance coupon.  Its op44 body still requires a
+        // nonzero instance, so send the coupon's real durable identity.
+        const uint32_t sentIdentity =
+            selection.templateID == 202611001
+                ? selection.templateID
+                : selection.identity;
+        writeU32(value(), sentIdentity);
         writeU32(value(), selection.templateID);
         writeU32(value(), 0);
         flush();
@@ -14900,6 +14912,94 @@ bool InstallCustomRegionNameCompatibility()
 
 static SRWLOCK g_guildRankLock = SRWLOCK_INIT;
 static GuildRankSnapshot g_guildRankSnapshot = {};
+
+// The owned layered overlay can dispatch successfully while remaining
+// invisible over the game surface. The client's announcement owner (0x298) is
+// the native in-game window already used for guild-war refusals, so prefer it
+// for server text and keep the overlay only as a fallback.
+bool ShowPrivateClientAnnouncement(const wchar_t* text, unsigned int length)
+{
+    if (!text || length == 0 || length > kLuaNoticeMaximumCharacters ||
+        !g_dnfBase || !g_originalSceneUiOpen) {
+        return false;
+    }
+    wchar_t copy[kLuaNoticeMaximumCharacters + 1] = {};
+    for (unsigned int index = 0; index < length; ++index) {
+        if (text[index] == L'\0') return false;
+        copy[index] = text[index];
+    }
+    void* scene = *reinterpret_cast<void**>(g_dnfBase + kSceneRootPointerRva);
+    if (!scene) return false;
+    auto open = reinterpret_cast<GuildWarNoticeOpenFn>(g_originalSceneUiOpen);
+    open(scene, 0x298, static_cast<int>(
+        reinterpret_cast<uintptr_t>(copy)), 0);
+    return true;
+}
+
+// Generic class0/op413 type-4 notice:
+//   body: type(1), version(1), utf16_units(2), argb(4),
+//         [styled: style(1), reserved(1)], utf16 text.
+//
+// The server and 90CN.dll previously had the encoding/rendering halves but no
+// inbound packet consumer between them. Version 2 is used for new styled
+// notices; version 1 remains accepted for existing senders. Keep this consumer
+// after the exact-length guild-ranking gate so guild type-4 packets continue to
+// retain their existing layout.
+bool TryConsumePrivateClientNotice(int packet)
+{
+    __try {
+        if (!packet) return false;
+        const unsigned char* bytes = reinterpret_cast<const unsigned char*>(packet);
+        if (*reinterpret_cast<const unsigned short*>(bytes + 1) != 413 ||
+            bytes[16] != 4) return false;
+
+        const unsigned int declaredLength =
+            *reinterpret_cast<const unsigned int*>(bytes + 3);
+        const unsigned char version = bytes[17];
+        unsigned int headerLength = 0;
+        if (version == 1) {
+            headerLength = 8;
+        } else if (version == 2) {
+            headerLength = 10;
+        } else {
+            return false;
+        }
+
+        const unsigned int unitCount =
+            *reinterpret_cast<const unsigned short*>(bytes + 18);
+        if (unitCount == 0 || unitCount > kLuaNoticeMaximumCharacters) {
+            return true;
+        }
+        const unsigned int expectedLength =
+            16 + headerLength + unitCount * sizeof(wchar_t);
+        if (declaredLength != expectedLength ||
+            declaredLength < 16 + headerLength + sizeof(wchar_t)) {
+            return true;
+        }
+
+        const wchar_t* text = reinterpret_cast<const wchar_t*>(
+            bytes + 16 + headerLength);
+        if (ShowPrivateClientAnnouncement(text, unitCount)) {
+            LogLine("client notice private envelope consumed chars=%u version=%u renderer=native-announcement",
+                unitCount, version);
+            return true;
+        }
+        if (!QueueClientNoticeInternal(
+                text, unitCount, kClientNoticeStylePopup)) {
+            LogLine("client notice private envelope rejected chars=%u version=%u",
+                unitCount, version);
+            return true;
+        }
+        LogLine("client notice private envelope consumed chars=%u version=%u renderer=overlay-fallback",
+            unitCount, version);
+        return true;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        LogLine("client notice private envelope exception=0x%08X",
+            GetExceptionCode());
+        return true;
+    }
+}
 
 // Private class0/413 subtype4 version1. The gate is deliberately strict: msgID
 // 413, declared total length 28, then b[16]==4 && b[17]==1. The body sits at

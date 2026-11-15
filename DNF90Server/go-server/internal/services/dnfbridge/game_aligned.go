@@ -4,6 +4,7 @@ package dnfbridge
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"slices"
@@ -51,6 +52,17 @@ var gameAlignedRegistry = alignedcmd.NewRegistry(
 // handleAlignedGameCommand 把协议号已对齐、但尚未落业务实现的命令归入模块边界。
 // 当前只记录分流证据，不伪造成功 ACK；具体回包必须等对应模块按 EXE/日志补齐。
 func (s *Service) handleAlignedGameCommand(session *gameSession, cmd byte, typ uint16, body []byte) (bool, error) {
+	if typ == uint16(dnfenum.CmdPacketUseStackable) && len(body) == 15 {
+		s.logInfo("dnfbridge equipment inheritance op44 probe",
+			"conn_id", session.connID,
+			"character_id", session.selectedCharacterID,
+			"body_len", len(body),
+			"slot", int16(binary.LittleEndian.Uint16(body[0:2])),
+			"list", body[2],
+			"instance", binary.LittleEndian.Uint32(body[3:7]),
+			"item", binary.LittleEndian.Uint32(body[7:11]),
+			"reserved", binary.LittleEndian.Uint32(body[11:15]))
+	}
 	if typ == monsterCardSynthesisTunnelOpcode {
 		if request, ok := parseMonsterCardSynthesisTunnel(body); ok {
 			s.logInfo("dnfbridge monster card synthesis tunnel received",
@@ -676,6 +688,22 @@ func (s *Service) handleAlignedGameCommand(session *gameSession, cmd byte, typ u
 	})
 	routeCancel()
 	session.party.mu.Unlock()
+	if typ == uint16(dnfenum.CmdPacketUseStackable) && len(body) == 15 {
+		s.logInfo("dnfbridge equipment inheritance op44 route result",
+			"conn_id", session.connID,
+			"character_id", session.selectedCharacterID,
+			"ok", ok,
+			"error", err,
+			"handled", result.Handled,
+			"response_allowed", result.ResponseAllowed,
+			"operation", result.Operation,
+			"response_count", len(result.UpperResponses),
+			"reason", result.Reason,
+			"client_notice", result.ClientNotice != nil,
+			"decision_action", result.Decision.Action,
+			"decision_domain", result.Decision.Domain,
+			"decision_support", result.Decision.Support)
+	}
 	if typ == uint16(dnfenum.CmdPacketMonstercardBind) {
 		s.logInfo("dnfbridge monster card synthesis route result",
 			"conn_id", session.connID,
@@ -721,8 +749,30 @@ func (s *Service) handleAlignedGameCommand(session *gameSession, cmd byte, typ u
 				"response_count", len(result.UpperResponses),
 				"reason", result.Reason,
 				"body_len", len(body))
-			if err := s.sendAlignedUpperResponses(session, result); err != nil {
-				return true, err
+			responseErr := s.sendAlignedUpperResponses(session, result)
+			if result.ClientNotice != nil && result.ClientNotice.Text != "" {
+				if noticeErr := s.sendNotice(session, noticeRequest{
+					// The owned overlay is the renderer proven to consume this
+					// compatibility client's private op413 notice envelope.
+					Surface: noticeSurfaceOverlay,
+					Text:    result.ClientNotice.Text,
+					Source:  result.Operation + "_client_notice",
+				}); noticeErr != nil {
+					s.logInfo("dnfbridge aligned client notice failed",
+						"conn_id", session.connID,
+						"operation", result.Operation,
+						"char_id", session.selectedCharacterID,
+						"error", noticeErr)
+				} else {
+					s.logInfo("dnfbridge aligned client notice sent",
+						"conn_id", session.connID,
+						"operation", result.Operation,
+						"char_id", session.selectedCharacterID,
+						"text_units", len([]rune(result.ClientNotice.Text)))
+				}
+			}
+			if responseErr != nil {
+				return true, responseErr
 			}
 			return true, nil
 		}

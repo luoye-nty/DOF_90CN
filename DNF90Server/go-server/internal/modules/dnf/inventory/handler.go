@@ -325,6 +325,21 @@ func (handler) Handle(ctx context.Context, req alignedcmd.Request) (alignedcmd.R
 		if err != nil {
 			return rejectedIncreaseStatusResult(req.Opcode, cmd, err), nil
 		}
+		inheritanceResult, inheritanceMatched, inheritanceErr := owner.TryUseEquipmentInheritanceSlot(
+			ctx, cmd, req.StackableUseResolver)
+		if inheritanceMatched {
+			if inheritanceErr != nil {
+				return rejectedEquipmentInheritanceResult(req.Opcode, cmd, UseStackableResult{
+					ItemID:                       currentEquipmentInheritanceCouponItemID,
+					EquipmentInheritanceRejected: true,
+					EquipmentInheritanceMessage:  equipmentInheritanceForbiddenText,
+				}), nil
+			}
+			if inheritanceResult.EquipmentInheritanceRejected {
+				return rejectedEquipmentInheritanceResult(req.Opcode, cmd, inheritanceResult), nil
+			}
+			return ownerAppliedEquipmentInheritanceResult(req.Opcode, cmd, inheritanceResult), nil
+		}
 		result, err := owner.UseIncreaseStatusBook(
 			ctx,
 			cmd,
@@ -444,6 +459,14 @@ func (handler) Handle(ctx context.Context, req alignedcmd.Request) (alignedcmd.R
 		result.DailyUseLimit = reservation.Limit
 		result.CooltimeItemID = cooltime.ItemID
 		result.CooltimeExpireAt = cooltime.ExpireAt
+		if result.EquipmentInheritanceRejected {
+			_ = owner.ReleaseDailyItemUse(ctx, characterID, reservation, time.Time{})
+			_ = owner.ReleaseItemCooltime(ctx, characterID, cooltime, time.Time{})
+			return rejectedEquipmentInheritanceResult(req.Opcode, cmd, result), nil
+		}
+		if result.EquipmentInheritanceApplied {
+			return ownerAppliedEquipmentInheritanceResult(req.Opcode, cmd, result), nil
+		}
 		// 防虚弱药剂: the client applies the buff itself and never reports it, so
 		// the server records the immunity window from the item id alone. Applied
 		// after the use, so the effect can never exist without the consumption.
@@ -461,14 +484,29 @@ func (handler) Handle(ctx context.Context, req alignedcmd.Request) (alignedcmd.R
 		if err != nil {
 			return ownerBlockedResult(cmd, err), nil
 		}
+		inheritanceResult, inheritanceMatched, inheritanceErr := owner.TryUseEquipmentInheritanceSlot(
+			ctx, cmd, req.StackableUseResolver)
+		if inheritanceMatched {
+			if inheritanceErr != nil {
+				return rejectedEquipmentInheritanceResult(req.Opcode, cmd, UseStackableResult{
+					ItemID:                       int64(cmd.ItemTemplateID),
+					EquipmentInheritanceRejected: true,
+					EquipmentInheritanceMessage:  equipmentInheritanceForbiddenText,
+				}), nil
+			}
+			if inheritanceResult.EquipmentInheritanceRejected {
+				return rejectedEquipmentInheritanceResult(req.Opcode, cmd, inheritanceResult), nil
+			}
+			return ownerAppliedEquipmentInheritanceResult(req.Opcode, cmd, inheritanceResult), nil
+		}
 		result, err := owner.UseSharedEffectItem(ctx, cmd, req.RandomRewardItemResolver)
 		if err != nil {
 			return ownerBlockedResult(cmd, err), nil
 		}
 		return ownerAppliedSharedEffectItemResult(req.Opcode, cmd, result), nil
 	case dnfenum.CmdPacketUseStackableAction:
-		parsed, err := DecodeUseStackableActionRequest(req.Body)
-		cmd := NewUseStackableActionCommand(req, parsed)
+		envelope, err := decodeUseStackableActionRequestEnvelope(req.Body)
+		cmd := NewUseStackableActionCommand(req, envelope)
 		if err != nil {
 			return ownerRejectedUseStackableActionResult(req.Opcode, cmd, err), nil
 		}
@@ -476,6 +514,22 @@ func (handler) Handle(ctx context.Context, req alignedcmd.Request) (alignedcmd.R
 		if err != nil {
 			return ownerRejectedUseStackableActionResult(req.Opcode, cmd, err), nil
 		}
+		inheritanceResult, inheritanceMatched, inheritanceErr := owner.TryUseEquipmentInheritanceSlot(
+			ctx, cmd, req.StackableUseResolver)
+		if inheritanceMatched {
+			if inheritanceErr != nil {
+				return ownerRejectedUseStackableActionResult(req.Opcode, cmd, inheritanceErr), nil
+			}
+			if inheritanceResult.EquipmentInheritanceRejected {
+				return rejectedEquipmentInheritanceResult(req.Opcode, cmd, inheritanceResult), nil
+			}
+			return ownerAppliedEquipmentInheritanceResult(req.Opcode, cmd, inheritanceResult), nil
+		}
+		parsed, err := DecodeUseStackableActionRequest(req.Body)
+		if err != nil {
+			return ownerRejectedUseStackableActionResult(req.Opcode, cmd, err), nil
+		}
+		cmd.ActionIndex = parsed.ActionIndex
 		// 每日可用次数（PVF [total usable count]）与 op44 同一条规则：动作落地之前
 		// 先按道具**自己的**声明预留一次，动作没成功就还回去。上限属于道具、与走哪个
 		// action 无关，所以预留放在分派之前（见 stackable_action_daily_use.go）。
@@ -2646,6 +2700,96 @@ func ownerAppliedUseStackableResult(opcode uint16, cmd Command, result UseStacka
 		}
 	}
 	return alignedResult
+}
+
+func rejectedEquipmentInheritanceResult(opcode uint16, cmd Command, result UseStackableResult) alignedcmd.Result {
+	text := result.EquipmentInheritanceMessage
+	if text == "" {
+		text = "该装备不允许参与继承"
+	}
+	responseBody := buildUseStackableFailureAck(cmd, useStackableSilentFailureCode)
+	ackKind := "op44"
+	switch dnfenum.CmdPacket(opcode) {
+	case dnfenum.CmdPacketIncreaseStatus:
+		responseBody = buildIncreaseStatusFailureAck(increaseStatusFailureCode)
+		ackKind = "op30"
+	case dnfenum.CmdPacketUseStackableAction:
+		responseBody = buildUseStackableActionFailureAck(useStackableActionFailureCode)
+		ackKind = "op515"
+	case dnfenum.CmdPacketUseSharedEffectItem:
+		responseBody = []byte{0, useStackableSilentFailureCode}
+		ackKind = "type251"
+	}
+	return alignedcmd.Result{
+		Handled:         true,
+		ResponseAllowed: true,
+		Operation:       cmd.Operation,
+		Reason: fmt.Sprintf(
+			"equipment inheritance rejected: %s coupon=%d source_slot=%d target_slot=%d reason=%q; returned %s error and native client notice",
+			cmd.String(),
+			result.ItemID,
+			result.EquipmentInheritanceSourceSlot,
+			result.EquipmentInheritanceTargetSlot,
+			text,
+			ackKind,
+		),
+		UpperResponses: []alignedcmd.UpperResponse{
+			class1Response(opcode, responseBody),
+		},
+		ClientNotice: &alignedcmd.ClientNoticeProjection{Text: text},
+	}
+}
+
+func ownerAppliedEquipmentInheritanceResult(
+	opcode uint16,
+	cmd Command,
+	result UseStackableResult,
+) alignedcmd.Result {
+	applied := ownerAppliedUseStackableResult(opcode, cmd, result)
+	ackKind := "op44"
+	switch dnfenum.CmdPacket(opcode) {
+	case dnfenum.CmdPacketIncreaseStatus:
+		applied.UpperResponses = []alignedcmd.UpperResponse{
+			class1Response(opcode, increaseStatusAck(uint16(result.SlotIndex), result)),
+		}
+		ackKind = "op30"
+	case dnfenum.CmdPacketUseStackableAction:
+		applied.UpperResponses = []alignedcmd.UpperResponse{
+			class1Response(opcode, buildUseStackableActionSuccessAck(result.SlotIndex, result.RemainingCount)),
+		}
+		ackKind = "op515"
+	case dnfenum.CmdPacketUseSharedEffectItem:
+		applied.UpperResponses = []alignedcmd.UpperResponse{
+			class1Response(opcode, buildUseSharedEffectItemSuccessAck()),
+		}
+		ackKind = "type251"
+	}
+	applied.Reason = fmt.Sprintf(
+		"equipment inheritance applied: %s coupon=%d remains=%d source_slot=%d target_slot=%d changed_slots=%v gold=%d->%d; %s success ACK, main-list rebuild, equipment slot refresh and gold projection",
+		cmd.String(),
+		result.ItemID,
+		result.RemainingCount,
+		result.EquipmentInheritanceSourceSlot,
+		result.EquipmentInheritanceTargetSlot,
+		result.EquipmentInheritanceChangedSlots,
+		result.EquipmentInheritanceGoldBefore,
+		result.EquipmentInheritanceGoldAfter,
+		ackKind,
+	)
+	applied.ItemSlotRefreshes = append(applied.ItemSlotRefreshes,
+		alignedcmd.ItemSlotRefresh{ListType: listTypeMain, SlotIndex: result.SlotIndex})
+	for _, slot := range result.EquipmentInheritanceChangedSlots {
+		applied.ItemSlotRefreshes = append(applied.ItemSlotRefreshes,
+			alignedcmd.ItemSlotRefresh{ListType: listTypeMain, SlotIndex: slot})
+	}
+	applied.ItemListRebuilds = []byte{listTypeMain}
+	applied.EquipmentSlotRefreshes = []int16{result.EquipmentInheritanceTargetSlot}
+	if result.EquipmentInheritanceGoldChanged {
+		gold := result.EquipmentInheritanceGoldAfter
+		applied.CharacterGoldAfter = &gold
+	}
+	applied.ClientNotice = &alignedcmd.ClientNoticeProjection{Text: "装备继承成功"}
+	return applied
 }
 
 func appliedEventServerLevelUpResult(opcode uint16, cmd Command, result UseStackableResult) alignedcmd.Result {

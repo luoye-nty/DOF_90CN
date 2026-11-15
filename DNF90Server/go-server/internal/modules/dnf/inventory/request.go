@@ -672,6 +672,33 @@ func DecodeUseSharedEffectItemRequest(body []byte) (UseSharedEffectItemRequest, 
 }
 
 func DecodeUseStackableActionRequest(body []byte) (UseStackableActionRequest, error) {
+	req, err := decodeUseStackableActionRequestEnvelope(body)
+	if err != nil {
+		return UseStackableActionRequest{}, err
+	}
+	if req.ActionIndex != dungeonAdmissionTicketActionIndex && req.ActionIndex != damageFontActionIndex &&
+		req.ActionIndex != questCompletionTicketActionIndex && req.ActionIndex != fatiguePotionActionIndex &&
+		req.ActionIndex != rentalPointActionIndex && req.ActionIndex != accountCargoUpgradeActionIndex &&
+		req.ActionIndex != favorLetterActionIndex {
+		return UseStackableActionRequest{}, fmt.Errorf("use stackable action index %d unsupported", req.ActionIndex)
+	}
+	// 2026-10-16：action 157（`[action type] [use favor point]`，充满爱慕的信等）的客户端
+	// 会在第一个"保留"位置带一个非零值（线上抓包实测 0x11=17，同一包里槽位 0x44=68、
+	// 动作号 0x9d=157），其余已支持的动作都还是全零。该字段语义尚未反出来，先按动作号
+	// 放行并原样保留，别让它把整条动作挡成 error 17。
+	if req.ActionIndex != favorLetterActionIndex && (req.Reserved0 != 0 || req.Reserved1 != 0 || req.Reserved2 != 0) {
+		return UseStackableActionRequest{}, fmt.Errorf("use stackable action reserved values (%d,%d,%d), want all zero", req.Reserved0, req.Reserved1, req.Reserved2)
+	}
+	return req, nil
+}
+
+// decodeUseStackableActionRequestEnvelope validates the fields shared by all
+// class1/op515 actions but deliberately leaves the action id open. The
+// equipment-inheritance coupon must be recognised from its durable inventory
+// slot before the normal action whitelist is applied: older published STKs
+// still carried the dungeon-admission action and therefore arrived here as
+// action 1 instead of the ordinary op44 use packet.
+func decodeUseStackableActionRequestEnvelope(body []byte) (UseStackableActionRequest, error) {
 	const bodySize = 19
 	if len(body) != bodySize {
 		return UseStackableActionRequest{}, fmt.Errorf("use stackable action body length %d, want %d", len(body), bodySize)
@@ -689,19 +716,6 @@ func DecodeUseStackableActionRequest(body []byte) (UseStackableActionRequest, er
 	}
 	if req.ListType != listTypeMain {
 		return UseStackableActionRequest{}, fmt.Errorf("use stackable action list %d, want %d", req.ListType, listTypeMain)
-	}
-	if req.ActionIndex != dungeonAdmissionTicketActionIndex && req.ActionIndex != damageFontActionIndex &&
-		req.ActionIndex != questCompletionTicketActionIndex && req.ActionIndex != fatiguePotionActionIndex &&
-		req.ActionIndex != rentalPointActionIndex && req.ActionIndex != accountCargoUpgradeActionIndex &&
-		req.ActionIndex != favorLetterActionIndex {
-		return UseStackableActionRequest{}, fmt.Errorf("use stackable action index %d unsupported", req.ActionIndex)
-	}
-	// 2026-10-16：action 157（`[action type] [use favor point]`，充满爱慕的信等）的客户端
-	// 会在第一个"保留"位置带一个非零值（线上抓包实测 0x11=17，同一包里槽位 0x44=68、
-	// 动作号 0x9d=157），其余已支持的动作都还是全零。该字段语义尚未反出来，先按动作号
-	// 放行并原样保留，别让它把整条动作挡成 error 17。
-	if req.ActionIndex != favorLetterActionIndex && (req.Reserved0 != 0 || req.Reserved1 != 0 || req.Reserved2 != 0) {
-		return UseStackableActionRequest{}, fmt.Errorf("use stackable action reserved values (%d,%d,%d), want all zero", req.Reserved0, req.Reserved1, req.Reserved2)
 	}
 	return req, nil
 }

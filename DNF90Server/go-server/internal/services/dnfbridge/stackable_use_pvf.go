@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"longheng.io/server/internal/modules/dnf/alignedcmd"
@@ -14,6 +15,122 @@ import (
 )
 
 var fatiguePotionMaximumRemainingPattern = regexp.MustCompile(`(?i)(?:低于|below)\s*([0-9]+)`)
+
+const currentEquipmentInheritanceCouponItemID int64 = 202611001
+
+func currentPVFEquipmentInheritanceResolution(
+	catalog *pvfDungeonDropCatalog,
+	definition dungeonDropItemDefinition,
+) (*alignedcmd.EquipmentInheritanceResolution, error) {
+	if catalog == nil || catalog.source == nil {
+		return nil, fmt.Errorf("equipment inheritance coupon=%d active PVF source unavailable", definition.ItemID)
+	}
+	stackableType := normalizeDungeonDropStackableType(definition.StackableType)
+	implicitDirectUse := !definition.ActionUsableDungeon && !definition.ActionUsableSeriaRoom
+	if definition.ItemID != uint32(currentEquipmentInheritanceCouponItemID) ||
+		(stackableType != "[only effect]" && stackableType != "[etc]" && stackableType != "[waste]") ||
+		(!definition.ActionUsableVillage && !implicitDirectUse) ||
+		definition.ActionUsableDungeon ||
+		definition.ActionUsableSeriaRoom {
+		return nil, fmt.Errorf(
+			"equipment inheritance coupon=%d requires [only effect], [etc] or legacy [waste] and village-only use: type=%q village=%t dungeon=%t seria=%t",
+			definition.ItemID,
+			definition.StackableType,
+			definition.ActionUsableVillage,
+			definition.ActionUsableDungeon,
+			definition.ActionUsableSeriaRoom,
+		)
+	}
+	text, err := catalog.source.ReadText(definition.PVFPath)
+	if err != nil {
+		return nil, fmt.Errorf("read equipment inheritance coupon=%d path=%s: %w", definition.ItemID, definition.PVFPath, err)
+	}
+	document, err := dnfpvf.Parse(definition.PVFPath, text)
+	if err != nil {
+		return nil, fmt.Errorf("parse equipment inheritance coupon=%d path=%s: %w", definition.ItemID, definition.PVFPath, err)
+	}
+
+	materialValues := document.Ints("equipment inheritance material")
+	if len(materialValues)%2 != 0 {
+		return nil, fmt.Errorf("equipment inheritance material requires item/count pairs: %v", materialValues)
+	}
+	materialTotals := make(map[int64]int64)
+	for index := 0; index < len(materialValues); index += 2 {
+		itemID, count := materialValues[index], materialValues[index+1]
+		if itemID < 0 || itemID > int64(^uint32(0)) || count <= 0 {
+			return nil, fmt.Errorf("equipment inheritance material row=(%d,%d) is invalid", itemID, count)
+		}
+		if itemID == currentEquipmentInheritanceCouponItemID {
+			return nil, fmt.Errorf("equipment inheritance coupon cannot list itself as a material")
+		}
+		if itemID > 0 {
+			materialDefinition, resolveErr := catalog.ResolveItem(uint32(itemID))
+			if resolveErr != nil {
+				return nil, fmt.Errorf("resolve equipment inheritance material=%d: %w", itemID, resolveErr)
+			}
+			if materialDefinition.Kind != dungeonDropItemStackable {
+				return nil, fmt.Errorf("equipment inheritance material=%d is not stackable: kind=%s", itemID, materialDefinition.Kind)
+			}
+		}
+		if materialTotals[itemID] > int64(^uint64(0)>>1)-count {
+			return nil, fmt.Errorf("equipment inheritance material=%d count overflow", itemID)
+		}
+		materialTotals[itemID] += count
+	}
+	materialIDs := make([]int64, 0, len(materialTotals))
+	for itemID := range materialTotals {
+		materialIDs = append(materialIDs, itemID)
+	}
+	sort.Slice(materialIDs, func(i, j int) bool { return materialIDs[i] < materialIDs[j] })
+	materials := make([]alignedcmd.EquipmentInheritanceMaterial, 0, len(materialIDs))
+	for _, itemID := range materialIDs {
+		materials = append(materials, alignedcmd.EquipmentInheritanceMaterial{
+			ItemID: itemID,
+			Count:  materialTotals[itemID],
+		})
+	}
+
+	excludedValues := document.Ints("equipment inheritance excluded equipment")
+	excludedSet := make(map[int64]struct{}, len(excludedValues))
+	excluded := make([]int64, 0, len(excludedValues))
+	for _, itemID := range excludedValues {
+		if itemID <= 0 || itemID > int64(^uint32(0)) {
+			return nil, fmt.Errorf("equipment inheritance excluded equipment id=%d is invalid", itemID)
+		}
+		if _, exists := excludedSet[itemID]; exists {
+			continue
+		}
+		excludedSet[itemID] = struct{}{}
+		excluded = append(excluded, itemID)
+	}
+	sort.Slice(excluded, func(i, j int) bool { return excluded[i] < excluded[j] })
+
+	resolveEquipment := func(itemID int64) (alignedcmd.EquipmentInheritanceEquipment, error) {
+		if itemID <= 0 || itemID > int64(^uint32(0)) {
+			return alignedcmd.EquipmentInheritanceEquipment{}, fmt.Errorf("equipment inheritance item id=%d is invalid", itemID)
+		}
+		item, resolveErr := catalog.ResolveItem(uint32(itemID))
+		if resolveErr != nil {
+			return alignedcmd.EquipmentInheritanceEquipment{}, fmt.Errorf("resolve equipment inheritance item=%d: %w", itemID, resolveErr)
+		}
+		if item.Kind != dungeonDropItemEquipment {
+			return alignedcmd.EquipmentInheritanceEquipment{}, fmt.Errorf("equipment inheritance item=%d is not equipment: kind=%s", itemID, item.Kind)
+		}
+		return alignedcmd.EquipmentInheritanceEquipment{
+			ItemID:          itemID,
+			PVFPath:         item.PVFPath,
+			EquipmentType:   item.EquipmentType,
+			Rarity:          item.Rarity,
+			MinimumLevel:    item.MinimumLevel,
+			PeriodEquipment: item.PeriodEquipment,
+		}, nil
+	}
+	return &alignedcmd.EquipmentInheritanceResolution{
+		Materials:            materials,
+		ExcludedEquipmentIDs: excluded,
+		ResolveEquipment:     resolveEquipment,
+	}, nil
+}
 
 // currentPVFItemCooltimeGroup 返回某件道具的 PVF `[cooltime group]`（0 = 无组）。
 //
@@ -47,7 +164,8 @@ func (s *Service) currentPVFItemCooltimeGroup(itemID int64) int64 {
 func (s *Service) alignedStackableUseResolverForCommand(opcode dnfenum.CmdPacket) (alignedcmd.StackableUseResolver, error) {
 	if opcode != dnfenum.CmdPacketUseStackable && opcode != dnfenum.CmdPacketUseStackableAction &&
 		opcode != dnfenum.CmdPacketRequestEventServerLevelUp && opcode != dnfenum.CmdPacketIncreaseStatus &&
-		opcode != dnfenum.CmdPacketUpgradeInventory && opcode != dnfenum.CmdPacketUpgradeCargo {
+		opcode != dnfenum.CmdPacketUpgradeInventory && opcode != dnfenum.CmdPacketUpgradeCargo &&
+		opcode != dnfenum.CmdPacketUseSharedEffectItem {
 		// op30 carries no item identity, so its owner resolves the durable row
 		// through this same resolver before anything is consumed.
 		//
@@ -94,6 +212,15 @@ func (s *Service) alignedStackableUseResolverForCommand(opcode dnfenum.CmdPacket
 				resolution.CooltimeSeconds = seconds
 				resolution.CooltimeGroup = definition.CooltimeGroup
 			}
+		}
+		if itemID == currentEquipmentInheritanceCouponItemID {
+			inheritance, inheritanceErr := currentPVFEquipmentInheritanceResolution(catalog, definition)
+			if inheritanceErr != nil {
+				return alignedcmd.StackableUseResolution{}, inheritanceErr
+			}
+			resolution.EquipmentInheritance = inheritance
+			resolution.UsePlace = &alignedcmd.StackableUsePlaceResolution{VillageAllowed: true}
+			return resolution, nil
 		}
 		admissionTicket, admissionErr := s.currentPVFDungeonAdmissionTicket(definition)
 		if admissionErr != nil {

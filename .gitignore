@@ -3,6 +3,8 @@
 **/bin/
 **/obj/
 **/_build/
+**/Release/
+**/Debug/
 
 # Configurator settings written beside local executables.
 **/落叶DNF安装包配置器.ini

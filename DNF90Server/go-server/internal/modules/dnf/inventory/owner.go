@@ -124,6 +124,7 @@ var (
 	ErrRepairGoldInsufficient              = errors.New("repair gold is insufficient")
 	ErrMonsterCardUpgradeResolverRequired  = errors.New("monster card upgrade requires a runtime-PVF resolver")
 	ErrMonsterCardSynthesisContract        = errors.New("monster card synthesis contract is invalid")
+	ErrEquipmentInheritanceContract        = errors.New("equipment inheritance contract is invalid")
 )
 
 // op80 error codes. The current EXE's class-1 handler sub_1D2F410 takes the
@@ -510,6 +511,15 @@ type UseStackableResult struct {
 	ProjectileEffectID                int64
 	AvatarFittingRoomOpened           bool
 	CustomAbilityGroupConverterOpened bool
+	EquipmentInheritanceApplied       bool
+	EquipmentInheritanceRejected      bool
+	EquipmentInheritanceMessage       string
+	EquipmentInheritanceSourceSlot    int16
+	EquipmentInheritanceTargetSlot    int16
+	EquipmentInheritanceChangedSlots  []int16
+	EquipmentInheritanceGoldBefore    int64
+	EquipmentInheritanceGoldAfter     int64
+	EquipmentInheritanceGoldChanged   bool
 	FatiguePotionApplied              bool
 	FatigueBefore                     int64
 	FatigueAfter                      int64
@@ -3724,6 +3734,14 @@ func (o *Owner) useStackableWithResolvers(
 		// 所以它也走账号+角色+背包同一条事务（见 stat_change_potion.go）。
 		if stackableResolution.StatChangePotion != nil {
 			return o.useStatChangePotion(ctx, cmd, stackableResolution)
+		}
+		if stackableResolution.EquipmentInheritance != nil {
+			if stackableResolution.UsePlace != nil {
+				if err := validateStackableUsePlace(cmd, *stackableResolution.UsePlace); err != nil {
+					return UseStackableResult{}, err
+				}
+			}
+			return o.useEquipmentInheritance(ctx, cmd, stackableResolution)
 		}
 	}
 

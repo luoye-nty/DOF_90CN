@@ -57,6 +57,13 @@ func (s *Service) tryCurrentFavorLetterAction(session *gameSession, typ uint16, 
 	if loadErr != nil || !holding || stack.ItemID <= 0 {
 		return false, nil
 	}
+	// The inheritance coupon deliberately reuses the favor-letter client
+	// dispatcher because op515 action 157 is confirmed to send a request. It is
+	// not an NPC favor item; let the generic inventory action path resolve and
+	// intercept the fixed item ID before any affection state is touched.
+	if stack.ItemID == currentEquipmentInheritanceCouponItemID {
+		return false, nil
+	}
 	catalog, err := s.currentPVFItemCatalog()
 	if err != nil || catalog == nil {
 		return fail(101, "pvf_unavailable")
