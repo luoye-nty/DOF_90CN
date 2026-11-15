@@ -1365,7 +1365,11 @@ func currentEpicProductionConsumeStack(inventory *dnfrepo.InventoryRecord, slot 
 	if stack.Count == 0 {
 		delete(inventory.Slots, key)
 		var empty currentItemListEntry
-		empty.patchCore(slot, 0, 0)
+		// Ordinary list-0 rows must use -1 (0xFFFFFFFF) to make the current
+		// client remove the old item object. A (0,0) row is treated as an
+		// in-place update, leaving a consumed material visible until relog.
+		// Account-shared crystal/soul slots are different and keep (0,0).
+		empty.patchCore(slot, math.MaxUint32, 0)
 		return empty, nil
 	}
 	entry := currentItemListEntryFromStack(dnfrepo.MainInventoryListType, slot, stack)
@@ -2076,6 +2080,11 @@ func (s *Service) handleCurrentEpicProductionProcess(session *gameSession, body 
 		code := byte(currentEpicProductionGenericError)
 		if errors.Is(err, errCurrentEpicProductionWeeklyLimit) {
 			code = currentEpicProductionWeeklyLimitError
+		} else if errors.Is(err, errCurrentEpicProductionMaterial) {
+			// Process consumes both selected catalysts and [must need item].
+			// Keep the same material failure code as change/compound instead
+			// of falling back to the generic "用户信息错误" response.
+			code = 4
 		}
 		s.logGameEvent(session, "game-upper-epic-production-process-blocked", "body_len", len(body), "material_count", len(request.Materials), "result_code", code, "reason", err)
 		return s.sendGameUpperFailure(session, uint16(dnfenum.CmdPacketEpicProductionProcess), code)

@@ -195,7 +195,7 @@ type currentCeraShopCommitResult struct {
 	// BuyRestrictNotes 记录本次结账消费掉的商城限购（“维度:键:已购/上限”）。
 	// 商城道具的限购在道具 PVF 里没有字段，只能看这条日志确认计数真的在走。
 	BuyRestrictNotes []string
-	// BuyCountGiftCount 是本次结账后角色的多买多送累计次数（活动未启用时为 0）。
+	// BuyCountGiftCount 是本次结账后角色在当前多买多送轮次中的次数（活动未启用时为 0）。
 	// 仅供 committed 日志核对；真正下发给客户端的是
 	// sendCurrentCeraShopBuyCountGiftProjection（它重新读一次角色，拿的是权威值）。
 	BuyCountGiftCount int64
@@ -1052,7 +1052,7 @@ func (s *Service) handleCurrentCeraShopPurchase(session *gameSession, body []byt
 		"private_store_license_notified", currentCeraShopActivationContains(result.PremiumActivations, premium.TypePrivateStore),
 		// 商城限购：本次消费掉的计数（空 = 该商品不限购）。
 		"buy_restrict", strings.Join(result.BuyRestrictNotes, ","),
-		// 多买多送：本次结账后的累计次数与跨档发奖（空 = 本次没有商品参与该活动）。
+		// 多买多送：本次结账后的当前轮次次数与跨档发奖（空 = 本次没有商品参与该活动）。
 		"buy_count_gift_count", result.BuyCountGiftCount,
 		"buy_count_gift", strings.Join(result.BuyCountGiftNotes, ","),
 		// 本次结账的商品号。**必须记**：多买多送/限购都只对特定商品生效，
@@ -1911,8 +1911,7 @@ func (s *Service) commitCurrentCeraShopPurchase(
 					counted = currentCeraShopBuyCountGiftMaxCountedPerCheckout
 				}
 				before := currentCeraShopBuyCountGiftCountForPlan(*character, plan)
-				after := before + int64(counted)
-				rewards := plan.RewardsBetween(before, after)
+				after, rewards := plan.AdvanceBy(before, int64(counted))
 				grants, grantErr := grantCurrentCeraShopBuyCountGiftRewards(
 					catalog, inventory, rewards, placementMainSlotCount, premiumNow)
 				if grantErr != nil {

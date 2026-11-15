@@ -34,8 +34,9 @@ import (
 //   - 计数落在**角色** `Stats`（与 purchaselimit 角色维度同一套约定，零 schema 变更）。
 //   - 计数与发奖都在 `Checkout` 的 Project 回调里，**与扣费同一事务**：
 //     要么玩家扣了点券也拿到了奖励，要么两者都没发生。
-//   - 奖励 = 本次跨越的档位（`(before, after]`）。计数单调递增，所以每个档位天然只发一次，
-//     不需要额外的"已领取"状态。
+//   - 奖励 = 本次按购买次数逐次推进时跨过的档位。计数以最高档位为轮次长度：
+//     `1..MaxTier` 为一轮，达到最高档后的下一次购买回到 1，重新计算一轮。
+//     同一轮内每个档位只发一次；新的一轮会重新发放该轮覆盖的档位。
 //   - 只实现真机 PVF 里的 `[buy count gift type] 0`；别的取值一律不启用并记账原因，
 //     宁可什么都不做，也不按猜出来的语义发奖。
 const (
@@ -139,21 +140,54 @@ func (p *currentCeraShopBuyCountGiftPlan) Tiers() []currentCeraShopBuyCountGiftT
 	return out
 }
 
-// RewardsBetween 返回累计次数从 before 涨到 after 时**新跨越**的档位。
+// AdvanceBy 按实际购买次数推进轮次计数，并返回本次经过的全部档位奖励。
 //
-// 计数单调递增，所以每个档位只会在这里出现一次，不需要额外的"已领取"状态。
-// 一档有多个道具行时（同一 Tier 出现多行）会全部返回。
+// 轮次长度等于 [bonus item] 的最高档位。例如最高档为 10：
+// 9 -> 10 发放第 10 档，10 -> 1 发放第 1 档并开始新一轮。
+// 一次购物车购买多份时会逐份推进，因此跨越轮次边界也不会漏发两侧的档位。
+// 旧版本已经累计到最高档以上的角色会先按“本轮已完成”处理，下一次购买从 1 开始。
+func (p *currentCeraShopBuyCountGiftPlan) AdvanceBy(before, count int64) (int64, []currentCeraShopBuyCountGiftTier) {
+	if !p.Enabled() || count <= 0 {
+		return before, nil
+	}
+	maxTier := p.MaxTier()
+	if maxTier <= 0 {
+		return before, nil
+	}
+	current := before
+	if current < 0 {
+		current = 0
+	}
+	if current > maxTier {
+		current = maxTier
+	}
+
+	rewards := make([]currentCeraShopBuyCountGiftTier, 0, count)
+	for purchased := int64(0); purchased < count; purchased++ {
+		if current >= maxTier {
+			current = 1
+		} else {
+			current++
+		}
+		for _, tier := range p.tiers {
+			if tier.Tier == current {
+				rewards = append(rewards, tier)
+			}
+		}
+	}
+	return current, rewards
+}
+
+// RewardsBetween 返回累计购买次数从 before 推进到 after 时经过的档位。
+//
+// 保留这个辅助方法给区间诊断使用；商城结账必须使用 AdvanceBy，因为后者同时返回
+// 轮次重置后的新计数。一档有多个道具行时（同一 Tier 出现多行）会全部返回。
 func (p *currentCeraShopBuyCountGiftPlan) RewardsBetween(before, after int64) []currentCeraShopBuyCountGiftTier {
 	if !p.Enabled() || after <= before {
 		return nil
 	}
-	var out []currentCeraShopBuyCountGiftTier
-	for _, tier := range p.tiers {
-		if tier.Tier > before && tier.Tier <= after {
-			out = append(out, tier)
-		}
-	}
-	return out
+	_, rewards := p.AdvanceBy(before, after-before)
+	return rewards
 }
 
 // parseCurrentCeraShopBuyCountGiftSecond 解析第二代多买多送事件表。

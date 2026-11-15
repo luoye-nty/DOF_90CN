@@ -783,6 +783,39 @@ func TestCommitCurrentEpicProductionProcessValidatesAndConsumesAtomically(t *tes
 	}
 }
 
+func TestCurrentEpicProductionConsumeStackUsesDeleteSentinelWhenStackEmpties(t *testing.T) {
+	const (
+		itemID = uint32(10163135)
+		slot   = int16(157)
+	)
+	inventory := &dnfrepo.InventoryRecord{
+		CharacterID: "9",
+		Slots: map[string]dnfrepo.ItemStack{
+			currentCeraShopInventorySlotKey(dnfrepo.MainInventoryListType, slot): {
+				ItemID: int64(itemID),
+				Count:  1,
+			},
+		},
+	}
+
+	entry, err := currentEpicProductionConsumeStack(inventory, slot, itemID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, found := inventory.Slots[currentCeraShopInventorySlotKey(dnfrepo.MainInventoryListType, slot)]; found {
+		t.Fatal("consumed ordinary stack was not removed from the inventory record")
+	}
+	if got := int16(binary.LittleEndian.Uint16(entry.data[0:2])); got != slot {
+		t.Fatalf("deletion row slot=%d want=%d", got, slot)
+	}
+	if got := binary.LittleEndian.Uint32(entry.data[2:6]); got != math.MaxUint32 {
+		t.Fatalf("deletion row itemID=0x%08X want=0xFFFFFFFF", got)
+	}
+	if got := binary.LittleEndian.Uint32(entry.data[6:10]); got != 0 {
+		t.Fatalf("deletion row amount=%d want=0", got)
+	}
+}
+
 func TestBuildCurrentEpicProductionProcessAndInfoBodies(t *testing.T) {
 	process := buildCurrentEpicProductionProcessSuccessBody(currentEpicProductionProcessResult{ChargePoint: 23000, BigSuccess: true})
 	if len(process) != 6 || binary.LittleEndian.Uint32(process[:4]) != 23000 || process[4] != 1 || process[5] != 0 {

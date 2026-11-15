@@ -235,8 +235,8 @@ func TestParseCurrentCeraShopBuyCountGiftSecondFailsSafe(t *testing.T) {
 	})
 }
 
-// 奖励 = 本次新跨越的档位。计数单调递增，所以每个档位天然只发一次。
-func TestCurrentCeraShopBuyCountGiftRewardsBetweenCrossedTiers(t *testing.T) {
+// 奖励按购买轮次推进：达到最高档后的下一次购买回到第 1 档。
+func TestCurrentCeraShopBuyCountGiftAdvanceByStartsNewRoundAtMaxTier(t *testing.T) {
 	plan := parseCurrentCeraShopBuyCountGiftSecond(bridgePVFSource{
 		currentCeraShopBuyCountGiftSecondPVFPath: currentCeraShopBuyCountGiftSecondRealEVT,
 	})
@@ -244,31 +244,37 @@ func TestCurrentCeraShopBuyCountGiftRewardsBetweenCrossedTiers(t *testing.T) {
 		t.Fatal(plan.disabledReason)
 	}
 	cases := []struct {
-		before, after int64
+		before, count int64
+		wantAfter     int64
 		wantTiers     []int64
 	}{
-		{0, 0, nil},
-		{0, 1, []int64{1}},                 // 第 1 档必须有奖励
-		{1, 2, []int64{2}},                 // 逐次购买
-		{0, 3, []int64{1, 2, 3}},           // 一次买 3 件（购物车多行）
-		{5, 6, []int64{6}},                 // 顶档
-		{6, 7, nil},                        // 超过顶档不再发
-		{0, 99, []int64{1, 2, 3, 4, 5, 6}}, // 一次性跨越全部档位
-		{3, 3, nil},                        // 没有增长
-		{4, 2, nil},                        // 回退（不该发生）也不发
+		{0, 0, 0, nil},
+		{0, 1, 1, []int64{1}},                   // 第 1 档必须有奖励
+		{1, 1, 2, []int64{2}},                   // 逐次购买
+		{0, 3, 3, []int64{1, 2, 3}},             // 一次买 3 件（购物车多行）
+		{5, 1, 6, []int64{6}},                   // 完成本轮最后一档
+		{6, 1, 1, []int64{1}},                   // 下一份回到第 1 档
+		{5, 2, 1, []int64{6, 1}},                // 一次跨轮也不漏发
+		{0, 7, 1, []int64{1, 2, 3, 4, 5, 6, 1}}, // 七个购买份额
+		{3, 3, 6, []int64{4, 5, 6}},             // 一次买完本轮剩余部分
+		{7, 1, 1, []int64{1}},                   // 旧版超过顶档也按本轮完成处理
+		{-3, 1, 1, []int64{1}},                  // 旧异常负数按 0 修复
 	}
 	for _, testCase := range cases {
-		rewards := plan.RewardsBetween(testCase.before, testCase.after)
+		after, rewards := plan.AdvanceBy(testCase.before, testCase.count)
+		if after != testCase.wantAfter {
+			t.Fatalf("before=%d count=%d after=%d want=%d", testCase.before, testCase.count, after, testCase.wantAfter)
+		}
 		gotTiers := make([]int64, 0, len(rewards))
 		for _, reward := range rewards {
 			gotTiers = append(gotTiers, reward.Tier)
 		}
 		if len(gotTiers) != len(testCase.wantTiers) {
-			t.Fatalf("(%d,%d] 档位=%v want=%v", testCase.before, testCase.after, gotTiers, testCase.wantTiers)
+			t.Fatalf("before=%d count=%d 档位=%v want=%v", testCase.before, testCase.count, gotTiers, testCase.wantTiers)
 		}
 		for index := range gotTiers {
 			if gotTiers[index] != testCase.wantTiers[index] {
-				t.Fatalf("(%d,%d] 档位=%v want=%v", testCase.before, testCase.after, gotTiers, testCase.wantTiers)
+				t.Fatalf("before=%d count=%d 档位=%v want=%v", testCase.before, testCase.count, gotTiers, testCase.wantTiers)
 			}
 		}
 	}
@@ -290,8 +296,8 @@ func TestCurrentCeraShopBuyCountGiftBodyIsExactlyOneUint32(t *testing.T) {
 	}
 }
 
-// 端到端：连买 7 次参与活动的商品。
-// 前 6 次逐档发奖（**第 1 档就发**），第 7 次只涨计数不再发。
+// 端到端：连买 13 次参与活动的商品。
+// 第 1 轮 1..6 逐档发奖，第 7 次重置为 1 并开始第二轮。
 func TestCurrentCeraShopPurchaseCountsBuyCountGiftAndGrantsTiersInOneTransaction(t *testing.T) {
 	ctx := context.Background()
 	catalog := mustCurrentCeraShopBuyCountGiftCatalog(t, currentCeraShopBuyCountGiftTestSource())
@@ -339,7 +345,7 @@ func TestCurrentCeraShopPurchaseCountsBuyCountGiftAndGrantsTiersInOneTransaction
 		return total
 	}
 
-	for purchase := 1; purchase <= 7; purchase++ {
+	for purchase := 1; purchase <= 13; purchase++ {
 		connection.write.Reset()
 		result, err := service.commitCurrentCeraShopPurchase(ctx, session, catalog, currentCeraShopPurchaseRequest{
 			PaymentMode: currentCeraShopPaymentModeCera,
@@ -348,44 +354,37 @@ func TestCurrentCeraShopPurchaseCountsBuyCountGiftAndGrantsTiersInOneTransaction
 		if err != nil {
 			t.Fatalf("第 %d 次购买失败: %v", purchase, err)
 		}
-		if result.BuyCountGiftCount != int64(purchase) {
-			t.Fatalf("第 %d 次购买后累计次数=%d", purchase, result.BuyCountGiftCount)
+		expectedCount := int64((purchase-1)%6 + 1)
+		if result.BuyCountGiftCount != expectedCount {
+			t.Fatalf("第 %d 次购买后累计次数=%d want=%d", purchase, result.BuyCountGiftCount, expectedCount)
 		}
 		character, found, err := repositories.Character.Load(ctx, "19")
 		if err != nil || !found {
 			t.Fatalf("load character found=%t err=%v", found, err)
 		}
-		if got := currentCeraShopBuyCountGiftCount(character); got != int64(purchase) {
-			t.Fatalf("第 %d 次购买后落库次数=%d（必须落库，小退/重启后要还在）", purchase, got)
+		if got := currentCeraShopBuyCountGiftCount(character); got != expectedCount {
+			t.Fatalf("第 %d 次购买后落库次数=%d want=%d（必须落库，小退/重启后要还在）", purchase, got, expectedCount)
 		}
-		if purchase <= 6 {
-			// 第 N 次购买发第 N 档奖励（道具 490702363+N）。
-			rewardItemID := uint32(490702363 + purchase)
-			if got := countRewardInInventory(rewardItemID); got != 1 {
-				t.Fatalf("第 %d 次购买后奖励道具 %d 数量=%d want=1", purchase, rewardItemID, got)
-			}
-			if len(result.BuyCountGiftNotes) != 1 ||
-				!strings.Contains(result.BuyCountGiftNotes[0], "tier:"+itoaForTest(int64(purchase))) {
-				t.Fatalf("第 %d 次购买的跨档记录=%v", purchase, result.BuyCountGiftNotes)
-			}
-			// 弹窗数据必须一起产出：handler 就是按这个列表逐条发 `class0/op852` 的。
-			if len(result.BuyCountGiftRewards) != 1 || result.BuyCountGiftRewards[0].ItemID != rewardItemID {
-				t.Fatalf("第 %d 次购买的弹窗数据=%+v want item=%d",
-					purchase, result.BuyCountGiftRewards, rewardItemID)
-			}
-		} else {
-			if len(result.BuyCountGiftNotes) != 0 {
-				t.Fatalf("第 7 次购买已超过顶档，不该再发奖：%v", result.BuyCountGiftNotes)
-			}
-			if len(result.BuyCountGiftRewards) != 0 {
-				t.Fatalf("第 7 次购买不该产出弹窗：%+v", result.BuyCountGiftRewards)
-			}
+		// 每一轮的第 N 次购买发第 N 档奖励（道具 490702363+N）。
+		rewardItemID := uint32(490702363 + expectedCount)
+		if len(result.BuyCountGiftNotes) != 1 ||
+			!strings.Contains(result.BuyCountGiftNotes[0], "tier:"+itoaForTest(expectedCount)) {
+			t.Fatalf("第 %d 次购买的跨档记录=%v", purchase, result.BuyCountGiftNotes)
+		}
+		// 弹窗数据必须一起产出：handler 就是按这个列表逐条发 `class0/op852` 的。
+		if len(result.BuyCountGiftRewards) != 1 || result.BuyCountGiftRewards[0].ItemID != rewardItemID {
+			t.Fatalf("第 %d 次购买的弹窗数据=%+v want item=%d",
+				purchase, result.BuyCountGiftRewards, rewardItemID)
 		}
 	}
-	// 6 档奖励各只发过一次。
+	// 13 次购买完成两轮并进入第三轮第 1 档：第 1 档共 3 次，其余档位各 2 次。
 	for tier := 1; tier <= 6; tier++ {
-		if got := countRewardInInventory(uint32(490702363 + tier)); got != 1 {
-			t.Fatalf("第 %d 档奖励数量=%d want=1（每档只能发一次）", tier, got)
+		want := int64(2)
+		if tier == 1 {
+			want = 3
+		}
+		if got := countRewardInInventory(uint32(490702363 + tier)); got != want {
+			t.Fatalf("第 %d 档奖励数量=%d want=%d（每轮都应重新发奖）", tier, got, want)
 		}
 	}
 }
@@ -397,6 +396,7 @@ func TestCurrentCeraShopPurchaseKeepsExtraCampaignCountsIndependent(t *testing.T
 		bcommodity uint32 = 200001
 		areward    uint32 = 490702364
 		breward    uint32 = 490702365
+		breward2   uint32 = 490702366
 	)
 	extraPath := currentCeraShopBuyCountGiftExtraPVFPathPrefix + "b.evt"
 	base := currentCeraShopBuyCountGiftTestSource()
@@ -411,6 +411,7 @@ func TestCurrentCeraShopPurchaseKeepsExtraCampaignCountsIndependent(t *testing.T
 		"[/bonus event ipg]\n" +
 		"[bonus item]\n" +
 		"1 " + itoaForTest(int64(breward)) + " 1\n" +
+		"2 " + itoaForTest(int64(breward2)) + " 1\n" +
 		"[/bonus item]\n" +
 		"[buy count gift type]\n0\n[/buy count gift type]\n"
 	source := &currentCeraShopBuyCountGiftRangeSource{
@@ -519,6 +520,37 @@ func TestCurrentCeraShopPurchaseKeepsExtraCampaignCountsIndependent(t *testing.T
 	}
 	if inventoryCount(areward) != 1 || inventoryCount(breward) != 1 {
 		t.Fatalf("rewards after B: A=%d B=%d", inventoryCount(areward), inventoryCount(breward))
+	}
+
+	result = purchase(bcommodity)
+	if result.BuyCountGiftCount != 1 || len(result.BuyCountGiftRewards) != 1 ||
+		result.BuyCountGiftRewards[0].ItemID != breward2 {
+		t.Fatalf("B second purchase result=%+v", result)
+	}
+	character = count()
+	if got := currentCeraShopBuyCountGiftCountForPlan(character, plans[0]); got != 1 {
+		t.Fatalf("A count after B second purchase=%d want=1", got)
+	}
+	if got := currentCeraShopBuyCountGiftCountForPlan(character, plans[1]); got != 2 {
+		t.Fatalf("B count after second purchase=%d want=2", got)
+	}
+
+	// B 的最高档是 2，再买一次必须只重置 B 为 1，不能影响主活动 A。
+	result = purchase(bcommodity)
+	if result.BuyCountGiftCount != 1 || len(result.BuyCountGiftRewards) != 1 ||
+		result.BuyCountGiftRewards[0].ItemID != breward {
+		t.Fatalf("B third purchase result=%+v", result)
+	}
+	character = count()
+	if got := currentCeraShopBuyCountGiftCountForPlan(character, plans[0]); got != 1 {
+		t.Fatalf("A count after B reset=%d want=1", got)
+	}
+	if got := currentCeraShopBuyCountGiftCountForPlan(character, plans[1]); got != 1 {
+		t.Fatalf("B count after reset=%d want=1", got)
+	}
+	if inventoryCount(breward) != 2 || inventoryCount(breward2) != 1 {
+		t.Fatalf("rewards after B reset: B1=%d want=2 B2=%d want=1",
+			inventoryCount(breward), inventoryCount(breward2))
 	}
 }
 
