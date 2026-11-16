@@ -58,45 +58,32 @@ import (
 //	     （先过 sub_32DDC70 的通用码表，所以别用 12/54/77/105/114/115/122/134/
 //	      136/137/167/208/210/214/229/230/232/234/237/239 这些已被占用的码）
 //
-// # 「合成失败」为什么要单独发一帧
+// # 合成未升级不是失败
 //
-// 原生码表里**没有一条是"合成失败"**，而失败 ACK 又**必须发**：失败分支末尾
-// 0x01D2A948 会对窗口 430 调 sub_E622C0(1) 把合成界面解锁，不发这一帧界面就卡死。
-// 所以掷骰失败一定会先弹出一句笼统的「无法进行合成。」，服务端挡不住。
-//
-// 解法是走 90CN.dll 早就有的自定义公告通道（class0/op413 type 4），**style 2**：
-// 它开的正是客户端自己那个 scene UI owner **0x298** 公告窗 —— 和上面那句
-// 「无法进行合成。」是**同一个窗口**。而 90CN.dll 的 OpenNativeAnnouncementWindow
-// 在开之前会先关掉已经打开的那一个，所以在 ACK **之后**补这一帧，就等于把前一句
-// 顶掉、换成「合成失败」。玩家最终只看到后者。
-//
-// 顺序因此是死的：失败 ACK -> 重建 list 38 -> 公告帧。反过来发会被 ACK 的弹窗盖住。
+// guilddungeoncompound.etc 的成功率只决定产物是否提升稀有度，不决定是否产出物品。
+// 掷骰未中时仍返回一件材料当前稀有度的勋章/守护珠，并照常走成功 ACK。只有请求
+// 非法、材料不符、配方件数不支持或 list-38 无空间时，才返回失败 ACK。
 const (
 	currentGuildCompoundFlagMsg = uint16(dnfenum.CmdPacketCompoundFlag)
 	currentGuildCompoundGemMsg  = uint16(dnfenum.CmdPacketCompoundGem)
 
-	currentGuildCompoundRequestSize = 37
-	currentGuildCompoundSlotCount   = 4
-	currentGuildCompoundHeaderSize  = 13
-	currentGuildCompoundEmptySlot   = int32(-1)
-	// 掷骰失败与规则性拒绝共用默认分支，都会先弹「无法进行合成。」；掷骰失败
-	// 随后用 0x298 公告帧把它顶成「合成失败」。
-	currentGuildCompoundErrorRollFailed = byte(1)
-	currentGuildCompoundErrorRejected   = byte(1)
+	currentGuildCompoundRequestSize   = 37
+	currentGuildCompoundSlotCount     = 4
+	currentGuildCompoundHeaderSize    = 13
+	currentGuildCompoundEmptySlot     = int32(-1)
+	currentGuildCompoundErrorRejected = byte(1)
 	// 产物放不下：显示「请整理物品栏的空间后再试。」。
 	currentGuildCompoundErrorNoSpace = byte(95)
-	// 顶替文案。dstr 19212 的原文，这两个 handler 够不着它，只能照抄。
-	currentGuildCompoundFailureNotice = "合成失败"
 )
 
 var (
-	errCurrentGuildCompoundRequestMalformed = errors.New("dnf guild compound request is malformed")
-	errCurrentGuildCompoundMaterialInvalid  = errors.New("dnf guild compound material is invalid")
-	errCurrentGuildCompoundRecipeMissing    = errors.New("dnf guild compound recipe is missing")
-	errCurrentGuildCompoundTopOfLadder      = errors.New("dnf guild compound rarity is the top of the ladder")
-	errCurrentGuildCompoundNoCandidate      = errors.New("dnf guild compound has no result candidate")
-	errCurrentGuildCompoundOwnerUnavailable = errors.New("dnf guild compound owner is unavailable")
-	errCurrentGuildCompoundNoSpace          = errors.New("dnf guild compound result has no free list-38 slot")
+	errCurrentGuildCompoundRequestMalformed  = errors.New("dnf guild compound request is malformed")
+	errCurrentGuildCompoundMaterialInvalid   = errors.New("dnf guild compound material is invalid")
+	errCurrentGuildCompoundRecipeMissing     = errors.New("dnf guild compound recipe is missing")
+	errCurrentGuildCompoundRecipeUnavailable = errors.New("dnf guild compound recipe cannot accept materials")
+	errCurrentGuildCompoundNoCandidate       = errors.New("dnf guild compound has no result candidate")
+	errCurrentGuildCompoundOwnerUnavailable  = errors.New("dnf guild compound owner is unavailable")
+	errCurrentGuildCompoundNoSpace           = errors.New("dnf guild compound result has no free list-38 slot")
 )
 
 type currentGuildCompoundCatalogCache struct {
@@ -156,21 +143,18 @@ func parseCurrentGuildCompoundRequest(body []byte) (currentGuildCompoundRequest,
 
 // currentGuildCompoundResult 是一次合成的判定结果。
 type currentGuildCompoundResult struct {
-	Kind       dnfguild.CompoundKind
-	Rarity     uint32
-	NextRarity uint32
-	Recipe     dnfguild.CompoundRecipe
-	Materials  []uint32
-	// MaterialRarities 是每件材料的真实稀有度，用来观察跨品级合成时客户端到底
-	// 往 rarity 字段里写了什么。
-	MaterialRarities []uint32
-	MixedRarities    bool
-	SuccessRate      uint32
-	Roll             uint32
-	Success          bool
-	ResultItem       uint32
-	ResultSlot       int16
-	ChangedKeys      []string
+	Kind         dnfguild.CompoundKind
+	Rarity       uint32
+	NextRarity   uint32
+	OutputRarity uint32
+	Recipe       dnfguild.CompoundRecipe
+	Materials    []uint32
+	UpgradeRate  uint32
+	Roll         uint32
+	Upgraded     bool
+	ResultItem   uint32
+	ResultSlot   int16
+	ChangedKeys  []string
 	// Updates 是本次真正变动的 list-38 行（材料扣减/清空 + 产物）。下发用的是
 	// op13 整表重建而不是这些增量行（旧客户端对侧栏容器的即时 op14 不可靠），
 	// 但仍然要把它们算出来：每一行同时也是写回 stack.RawEntry 的那份权威字节，
@@ -220,21 +204,20 @@ func (s *Service) handleCurrentGuildCompound(
 		"char_id", session.selectedCharacterID,
 		"rarity", result.Rarity,
 		"next_rarity", result.NextRarity,
+		"output_rarity", result.OutputRarity,
 		"materials", fmt.Sprint(result.Materials),
 		"material_count", request.Count,
 		"max_material_count", result.Recipe.MaxMaterialCount,
 		"rate_per_material", result.Recipe.RatePerMaterial,
-		"success_rate", result.SuccessRate,
-		"material_rarities", fmt.Sprint(result.MaterialRarities),
-		"mixed_rarities", result.MixedRarities,
+		"upgrade_rate", result.UpgradeRate,
 		"roll", result.Roll,
-		"success", result.Success,
+		"upgraded", result.Upgraded,
 		"result_item", result.ResultItem,
 		"result_slot", result.ResultSlot,
 		"changed_rows", len(result.Updates),
 		"refresh", "current_exe_op13_list38_rebuild_after_ack")
 
-	// 发包顺序：ACK -> 重建 list 38 -> （失败时）公告帧。
+	// 发包顺序：成功 ACK -> 重建 list 38。
 	//
 	// # 为什么不是增量 op14
 	//
@@ -252,32 +235,11 @@ func (s *Service) handleCurrentGuildCompound(
 	//
 	// # 为什么放在 ACK 之后
 	//
-	// 失败分支末尾 0x01D2A948 会对合成窗口 430 调 sub_E622C0(1) 做一次复位，
-	// 复位会重画容器视图，先发的表会被它盖掉。宠物栏那条路径记录的顺序也是
-	//「durable transaction -> class1 ack -> op13 list」。成功分支不需要容器先
-	// 到位：sub_2759A70 是拿 ACK 里的产物 ID 直接建图标的，不从槽位解析。
-	//
-	// 勋章走同一个函数、同一条顺序，所以有同样的问题，这次一起修好。
+	// sub_2759A70 是拿 ACK 里的产物 ID 直接建图标，不从槽位解析；随后再重建
+	// list 38，让扣除后的材料和新产物同步到侧栏容器。
 	refreshList := func() error {
 		return s.sendSelectedCurrentContainerListRefresh(
 			session, "guild_compound", currentGuildMedalInventoryListType)
-	}
-	if !result.Success {
-		if err := s.sendCurrentGuildCompoundFailure(
-			session, opcode, currentGuildCompoundErrorRollFailed); err != nil {
-			return err
-		}
-		if err := refreshList(); err != nil {
-			return err
-		}
-		// ACK 已经把「无法进行合成。」弹在 0x298 公告窗上了。这一帧走同一个窗口，
-		// 而 90CN.dll 开窗前会先关掉已开的那个，于是前一句被顶替成「合成失败」。
-		// 必须在 ACK 之后发，顺序反了就会被盖住。
-		return s.sendNotice(session, noticeRequest{
-			Surface: noticeSurfaceNativeWindow,
-			Text:    currentGuildCompoundFailureNotice,
-			Source:  "guild_compound_failed",
-		})
 	}
 	if err := s.sendGameUpperRawClass(
 		session,
@@ -306,9 +268,8 @@ func (s *Service) sendCurrentGuildCompoundFailure(
 }
 
 // commitCurrentGuildCompound 在一笔事务里校验材料、扣除、掷骰并落库产物。
-//
-// 运营口径（2026-09-15）：**失败照常消耗材料**，成功率才有意义。所以扣除发生在
-// 掷骰之前，且失败也照常提交。
+// 掷骰未中只表示稀有度没有提升，仍返回当前稀有度产物，因此每次合法合成都必须
+// 产生一件结果。
 func (s *Service) commitCurrentGuildCompound(
 	session *gameSession,
 	kind dnfguild.CompoundKind,
@@ -333,7 +294,7 @@ func (s *Service) commitCurrentGuildCompound(
 	}
 	if !recipe.Compoundable() {
 		return currentGuildCompoundResult{}, fmt.Errorf("%w: kind=%s rarity=%d",
-			errCurrentGuildCompoundTopOfLadder, kind, request.Rarity)
+			errCurrentGuildCompoundRecipeUnavailable, kind, request.Rarity)
 	}
 	// 件数是 2..上限的区间，不是定值：客户端的合成界面允许放 2..4 件，放得越多
 	// 成功率越高。第一版把它当成"必须正好 4 件"，玩家放 2 件被一句
@@ -343,19 +304,26 @@ func (s *Service) commitCurrentGuildCompound(
 			errCurrentGuildCompoundMaterialInvalid, kind, request.Rarity,
 			request.Count, dnfguild.CompoundMinMaterialCount, recipe.MaxMaterialCount)
 	}
-	successRate := recipe.SuccessRateFor(request.Count)
+	upgradeRate := recipe.UpgradeRateFor(request.Count)
 	nextRarity, hasNext := ladder.NextRarity(request.Rarity)
-	if !hasNext {
-		return currentGuildCompoundResult{}, fmt.Errorf("%w: kind=%s rarity=%d",
-			errCurrentGuildCompoundTopOfLadder, kind, request.Rarity)
-	}
-	candidates, err := s.currentGuildCompoundCandidates(kind, nextRarity)
+	currentCandidates, err := s.currentGuildCompoundCandidates(kind, request.Rarity)
 	if err != nil {
 		return currentGuildCompoundResult{}, err
 	}
-	if len(candidates) == 0 {
+	if len(currentCandidates) == 0 {
 		return currentGuildCompoundResult{}, fmt.Errorf("%w: kind=%s rarity=%d",
-			errCurrentGuildCompoundNoCandidate, kind, nextRarity)
+			errCurrentGuildCompoundNoCandidate, kind, request.Rarity)
+	}
+	var upgradeCandidates []uint32
+	if hasNext {
+		upgradeCandidates, err = s.currentGuildCompoundCandidates(kind, nextRarity)
+		if err != nil {
+			return currentGuildCompoundResult{}, err
+		}
+		if len(upgradeCandidates) == 0 {
+			return currentGuildCompoundResult{}, fmt.Errorf("%w: kind=%s rarity=%d",
+				errCurrentGuildCompoundNoCandidate, kind, nextRarity)
+		}
 	}
 
 	repositories, ok := s.repositoryGroup()
@@ -367,14 +335,14 @@ func (s *Service) commitCurrentGuildCompound(
 	characterID := strconv.Itoa(int(session.selectedCharacterID))
 	now := s.gameplayNow().UTC()
 	result := currentGuildCompoundResult{
-		Kind:        kind,
-		Rarity:      request.Rarity,
-		NextRarity:  nextRarity,
-		Recipe:      recipe,
-		SuccessRate: successRate,
-		ResultSlot:  -1,
+		Kind:         kind,
+		Rarity:       request.Rarity,
+		NextRarity:   nextRarity,
+		OutputRarity: request.Rarity,
+		Recipe:       recipe,
+		UpgradeRate:  upgradeRate,
+		ResultSlot:   -1,
 	}
-	mixedRarities := false
 	err = repositories.CharacterAssets.WithinCharacterAssets(
 		ctx,
 		characterID,
@@ -416,19 +384,14 @@ func (s *Service) commitCurrentGuildCompound(
 					return fmt.Errorf("%w: slot=%d item=%d is not a %s material",
 						errCurrentGuildCompoundMaterialInvalid, slot, stack.ItemID, kind)
 				}
-				// 跨品级：允许丢比声明档位**更高**的材料进去（玩家自己亏，
-				// 但不该被拒），只挡住比声明档位更低的 —— 那等于用垃圾换好货。
-				// 客户端在混档时到底把哪一档写进 rarity 字段还没有证据，所以
-				// 这里把每件材料的真实稀有度都记进日志，等实测样本来定案。
-				if definition.Rarity < 0 || uint32(definition.Rarity) < request.Rarity {
-					return fmt.Errorf("%w: slot=%d item=%d rarity=%d below declared=%d",
+				// 勋章与守护珠都禁止混级。客户端已经限制只能放入同档材料，
+				// 服务端仍必须独立校验，避免伪造请求用高稀有度材料换取
+				// 当前档产物，或把不同档材料混在一起计算成功率。
+				if !currentGuildCompoundMaterialRarityMatches(request.Rarity, definition.Rarity) {
+					return fmt.Errorf("%w: slot=%d item=%d rarity=%d declared=%d",
 						errCurrentGuildCompoundMaterialInvalid, slot, stack.ItemID,
 						definition.Rarity, request.Rarity)
 				}
-				if uint32(definition.Rarity) != request.Rarity {
-					mixedRarities = true
-				}
-				result.MaterialRarities = append(result.MaterialRarities, uint32(definition.Rarity))
 				if currentNPCShopItemLocked(stack) {
 					return fmt.Errorf("%w: slot=%d item=%d is locked",
 						errCurrentGuildCompoundMaterialInvalid, slot, stack.ItemID)
@@ -467,43 +430,47 @@ func (s *Service) commitCurrentGuildCompound(
 				changed = append(changed, key)
 			}
 
-			// 掷骰在扣除之后：失败也照常提交，材料就此消失。
+			// 掷骰只决定稀有度是否升级；无论结果如何都必须产出并提交一件物品。
 			result.Roll = uint32(rand.IntN(dnfguild.CompoundRateDenominator))
-			result.Success = result.Roll < successRate
-			if result.Success {
-				resultItem, pickErr := currentGuildCompoundPickResult(kind, materials, nextRarity, candidates)
-				if pickErr != nil {
-					return pickErr
-				}
-				definition, defErr := items.ResolveItem(resultItem)
-				if defErr != nil {
-					return defErr
-				}
-				// 【合并适配 2026-09-18】本地这一侧的 grantCurrentNPCShopProduct 多一个
-				// mainSlotCount（主背包已解锁槽位/开行上限）参数。这里合成结果只会是公会
-				// 勋章 / 守护珠（[flag]/[flag gem]），函数内部走 list 38 的
-				// grantCurrentGuildMedalListProduct 分支 —— 下一行的断言也强制要求
-				// listType == currentGuildMedalInventoryListType，永远到不了主背包分支，
-				// 因此传 0（=未购买扩容页）与上游版本的 3 参数调用完全等价。
-				listType, slots, grantErr := grantCurrentNPCShopProduct(&record, definition, 1, 0)
-				if grantErr != nil {
-					return fmt.Errorf("%w: result item=%d: %v",
-						errCurrentGuildCompoundNoSpace, resultItem, grantErr)
-				}
-				if listType != currentGuildMedalInventoryListType || len(slots) != 1 {
-					return fmt.Errorf("%w: result item=%d landed in list %d slots %v",
-						errCurrentGuildCompoundNoSpace, resultItem, listType, slots)
-				}
-				result.ResultItem = resultItem
-				result.ResultSlot = slots[0]
-				resultKey := currentCeraShopInventorySlotKey(currentGuildMedalInventoryListType, slots[0])
-				changed = append(changed, resultKey)
-				updates = append(updates, currentItemListEntryFromStack(
-					currentGuildMedalInventoryListType, slots[0], record.Slots[resultKey]))
+			result.Upgraded = result.Roll < upgradeRate
+			resultCandidates := currentCandidates
+			if result.Upgraded {
+				result.OutputRarity = nextRarity
+				resultCandidates = upgradeCandidates
 			}
+			resultItem, pickErr := currentGuildCompoundPickResult(
+				kind,
+				materials,
+				result.Upgraded,
+				result.OutputRarity,
+				resultCandidates,
+			)
+			if pickErr != nil {
+				return pickErr
+			}
+			definition, defErr := items.ResolveItem(resultItem)
+			if defErr != nil {
+				return defErr
+			}
+			// 合成结果只可能是公会勋章 / 守护珠（[flag]/[flag gem]），
+			// grantCurrentNPCShopProduct 会走 list 38；mainSlotCount 不参与。
+			listType, slots, grantErr := grantCurrentNPCShopProduct(&record, definition, 1, 0)
+			if grantErr != nil {
+				return fmt.Errorf("%w: result item=%d: %v",
+					errCurrentGuildCompoundNoSpace, resultItem, grantErr)
+			}
+			if listType != currentGuildMedalInventoryListType || len(slots) != 1 {
+				return fmt.Errorf("%w: result item=%d landed in list %d slots %v",
+					errCurrentGuildCompoundNoSpace, resultItem, listType, slots)
+			}
+			result.ResultItem = resultItem
+			result.ResultSlot = slots[0]
+			resultKey := currentCeraShopInventorySlotKey(currentGuildMedalInventoryListType, slots[0])
+			changed = append(changed, resultKey)
+			updates = append(updates, currentItemListEntryFromStack(
+				currentGuildMedalInventoryListType, slots[0], record.Slots[resultKey]))
 			result.ChangedKeys = changed
 			result.Updates = updates
-			result.MixedRarities = mixedRarities
 			record.UpdatedAt = now
 			return dnfrepo.SaveInventoryFields(ctx, inventories, record, dnfrepo.InventoryFieldSlots)
 		},
@@ -512,6 +479,10 @@ func (s *Service) commitCurrentGuildCompound(
 		return currentGuildCompoundResult{}, err
 	}
 	return result, nil
+}
+
+func currentGuildCompoundMaterialRarityMatches(requested uint32, actual int64) bool {
+	return actual >= 0 && uint64(actual) == uint64(requested)
 }
 
 // currentGuildCompoundMaterialMatches 用的是和 list-38 归位完全相同的判据。
@@ -529,22 +500,53 @@ func currentGuildCompoundMaterialMatches(
 	return definition.Kind == dungeonDropItemStackable
 }
 
-// currentGuildCompoundPickResult 选产物：守护珠优先同属性升一档，其余随机。
+// currentGuildCompoundPickResult 在目标稀有度内选产物。守护珠在四件材料同属
+// 一种属性时保持该属性：升级返回下一档，未升级返回原档；其余情况随机。
 func currentGuildCompoundPickResult(
 	kind dnfguild.CompoundKind,
 	materials []uint32,
-	nextRarity uint32,
+	upgraded bool,
+	outputRarity uint32,
 	candidates []uint32,
 ) (uint32, error) {
 	if len(candidates) == 0 {
-		return 0, fmt.Errorf("%w: kind=%s rarity=%d", errCurrentGuildCompoundNoCandidate, kind, nextRarity)
+		return 0, fmt.Errorf("%w: kind=%s rarity=%d",
+			errCurrentGuildCompoundNoCandidate, kind, outputRarity)
 	}
 	if kind == dnfguild.CompoundGem {
-		if successor, ok := currentGuildCompoundGemFamilySuccessor(materials, nextRarity, candidates); ok {
-			return successor, nil
+		if len(materials) > 0 {
+			sameFamily := true
+			for _, material := range materials[1:] {
+				if material != materials[0] {
+					sameFamily = false
+					break
+				}
+			}
+			if sameFamily {
+				if upgraded {
+					if successor, ok := currentGuildCompoundGemFamilySuccessor(
+						materials,
+						outputRarity,
+						candidates,
+					); ok {
+						return successor, nil
+					}
+				} else if currentGuildCompoundCandidateContains(candidates, materials[0]) {
+					return materials[0], nil
+				}
+			}
 		}
 	}
 	return candidates[rand.IntN(len(candidates))], nil
+}
+
+func currentGuildCompoundCandidateContains(candidates []uint32, itemID uint32) bool {
+	for _, candidate := range candidates {
+		if candidate == itemID {
+			return true
+		}
+	}
+	return false
 }
 
 func guildCompoundGameplayModule() gameplayModuleDefinition {

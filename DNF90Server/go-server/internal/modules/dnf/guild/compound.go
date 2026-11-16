@@ -22,8 +22,8 @@ import (
 //	勋章   0 -> 1 -> 2 -> 3 -> 6（6 是"完美的X图腾勋章"，封顶）
 //	守护珠 0 -> 1 -> 2 -> 3（封顶）
 //
-// 成功率为 0 的那一行是**封顶行**，不是"永远失败"：它是阶梯的最后一档，没有
-// 更高一档可以产出，所以直接判不可合成。
+// 成功率为 0 的那一行是**封顶行**：它没有更高一档可以产出，但仍然是合法配方。
+// 消耗材料后会返回当前最高档的随机产物，只是稀有度不再提升。
 //
 // # 件数与成功率的关系（2026-09-15 按玩家实测界面修正）
 //
@@ -42,15 +42,15 @@ import (
 // 是个不像巧合的整数。
 //
 // 最初的实现把第二列当成"必须正好这么多件"，于是玩家放 2 件被一句
-//「无法进行合成。」挡掉 —— 那是这一版修正的起因。
+// 「无法进行合成。」挡掉 —— 那是这一版修正的起因。
 //
 // 注意这张表**不在客户端里**：DNF.exe 的任何节里都搜不到 "guilddungeoncompound"
 // 或 "guild flag compound" 这两个串。所以客户端不校验件数，玩家往格子里放几个就
 // 发几个（实测勋章那次只放了 2 个就发了 count=2），规则全部由服务端裁决。
 //
-// 第三列的语义（成功率 1/10000）是推断而非反汇编证据：客户端不读这张表，服务端
-// 原本也没有实现，所以没有任何一端能直接证明。运营 2026-09-15 确认按成功率实现，
-// 且失败照常消耗材料。要改语义只需改这里。
+// 第三列的语义（每件材料的稀有度升级概率 1/10000）是推断而非反汇编证据：客户端
+// 不读这张表，服务端原本也没有实现。服务端按此概率决定产物是否升档；未升档时仍
+// 返回材料当前稀有度的产物，不把"未升级"当作无产物失败。
 var (
 	ErrCompoundCatalogUnavailable = errors.New("guild compound catalog is unavailable")
 	ErrCompoundCatalogInvalid     = errors.New("guild compound catalog is malformed")
@@ -88,13 +88,15 @@ type CompoundRecipe struct {
 	Rarity uint32
 	// MaxMaterialCount 是这一档最多能放几件材料。
 	MaxMaterialCount uint32
-	// RatePerMaterial 是**每件**材料贡献的万分率成功率。0 表示封顶、不可再合成。
+	// RatePerMaterial 是**每件**材料贡献的万分率升级概率。0 表示最高档，不再升档。
 	RatePerMaterial uint32
 }
 
-// Compoundable 报告这一档能不能继续往上合。
+// Compoundable 报告这一档是否允许合法地消耗材料进行合成。
+// 最高档的 RatePerMaterial 为 0，只表示不会提升稀有度，仍应返回同档产物，
+// 因此不能把 rate=0 当作不可合成。
 func (r CompoundRecipe) Compoundable() bool {
-	return r.RatePerMaterial > 0 && r.MaxMaterialCount >= CompoundMinMaterialCount
+	return r.MaxMaterialCount >= CompoundMinMaterialCount
 }
 
 // AcceptsMaterialCount 报告这一档收不收这么多件。
@@ -102,8 +104,8 @@ func (r CompoundRecipe) AcceptsMaterialCount(count uint32) bool {
 	return r.Compoundable() && count >= CompoundMinMaterialCount && count <= r.MaxMaterialCount
 }
 
-// SuccessRateFor 是放这么多件时的万分率成功率，封顶 100%。
-func (r CompoundRecipe) SuccessRateFor(count uint32) uint32 {
+// UpgradeRateFor 是放这么多件时的万分率稀有度升级概率，封顶 100%。
+func (r CompoundRecipe) UpgradeRateFor(count uint32) uint32 {
 	if !r.AcceptsMaterialCount(count) {
 		return 0
 	}
@@ -136,7 +138,7 @@ func (l CompoundLadder) NextRarity(rarity uint32) (uint32, bool) {
 		if row.Rarity != rarity {
 			continue
 		}
-		if !row.Compoundable() || index+1 >= len(l.rows) {
+		if index+1 >= len(l.rows) {
 			return 0, false
 		}
 		return l.rows[index+1].Rarity, true

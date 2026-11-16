@@ -129,9 +129,8 @@ func TestCurrentGuildCompoundFailureCodesAvoidTheGenericTable(t *testing.T) {
 		237: {}, 239: {},
 	}
 	for name, code := range map[string]byte{
-		"roll_failed": currentGuildCompoundErrorRollFailed,
-		"rejected":    currentGuildCompoundErrorRejected,
-		"no_space":    currentGuildCompoundErrorNoSpace,
+		"rejected": currentGuildCompoundErrorRejected,
+		"no_space": currentGuildCompoundErrorNoSpace,
 	} {
 		if _, taken := generic[code]; taken {
 			t.Fatalf("%s code %d is claimed by the generic sub_32DDC70 table", name, code)
@@ -141,29 +140,30 @@ func TestCurrentGuildCompoundFailureCodesAvoidTheGenericTable(t *testing.T) {
 	if currentGuildCompoundErrorNoSpace != 95 {
 		t.Fatalf("no-space code = %d, want 95 (dstr 33345)", currentGuildCompoundErrorNoSpace)
 	}
-	// 另外两个必须落在默认分支上：60/95 都被 handler 显式接管，60 会弹
-	//「正在使用个人商店， 无法进行合成。」，那句在合成失败时是错的。
-	for name, code := range map[string]byte{
-		"roll_failed": currentGuildCompoundErrorRollFailed,
-		"rejected":    currentGuildCompoundErrorRejected,
-	} {
-		if code == 60 || code == 95 {
-			t.Fatalf("%s code = %d, it must fall through to the default branch", name, code)
-		}
+	// 非法请求必须落在默认分支：60/95 都被 handler 显式接管，60 会弹
+	//「正在使用个人商店， 无法进行合成。」，不能用于普通规则拒绝。
+	if currentGuildCompoundErrorRejected == 60 || currentGuildCompoundErrorRejected == 95 {
+		t.Fatalf("rejected code = %d, it must fall through to the default branch",
+			currentGuildCompoundErrorRejected)
 	}
 }
 
-// 掷骰失败的文案只能靠 0x298 公告窗顶替：这个包的原生码表里没有"合成失败"，
-// 而失败 ACK 又必须发（0x01D2A948 对窗口 430 调 sub_E622C0(1) 解锁界面）。
-// 顶替帧走的是和 ACK 弹窗同一个窗口，90CN.dll 开窗前会先关掉已开的那个。
-func TestCurrentGuildCompoundFailureNoticeUsesTheAnnouncementWindow(t *testing.T) {
-	if noticeSurfaceNativeWindow.Backend != noticeBackendNativeWindow {
-		t.Fatalf("failure notice surface = %+v, want the 0x298 announcement window",
-			noticeSurfaceNativeWindow)
-	}
-	if currentGuildCompoundFailureNotice != "合成失败" {
-		t.Fatalf("failure notice text = %q, want dstr 19212 的原文",
-			currentGuildCompoundFailureNotice)
+func TestCurrentGuildCompoundMaterialRarityMustMatchExactly(t *testing.T) {
+	for _, test := range []struct {
+		requested uint32
+		actual    int64
+		want      bool
+	}{
+		{requested: 0, actual: 0, want: true},
+		{requested: 2, actual: 2, want: true},
+		{requested: 2, actual: 1, want: false},
+		{requested: 2, actual: 3, want: false},
+		{requested: 0, actual: -1, want: false},
+	} {
+		if got := currentGuildCompoundMaterialRarityMatches(test.requested, test.actual); got != test.want {
+			t.Fatalf("requested=%d actual=%d matched=%t want=%t",
+				test.requested, test.actual, got, test.want)
+		}
 	}
 }
 
@@ -185,15 +185,21 @@ func TestCurrentGuildCompoundGemFamilySuccessor(t *testing.T) {
 
 func TestCurrentGuildCompoundPickResultPrefersTheGemFamily(t *testing.T) {
 	got, err := currentGuildCompoundPickResult(
-		dnfguild.CompoundGem, []uint32{90002, 90002, 90002, 90002}, 3, []uint32{90003, 90013})
+		dnfguild.CompoundGem, []uint32{90002, 90002, 90002, 90002}, true, 3, []uint32{90003, 90013})
 	if err != nil || got != 90003 {
 		t.Fatalf("pick = %d, %v; want 90003", got, err)
+	}
+	// 未升级仍要返回产物，同属性材料保持原属性与原稀有度。
+	got, err = currentGuildCompoundPickResult(
+		dnfguild.CompoundGem, []uint32{90002, 90002, 90002, 90002}, false, 2, []uint32{90002, 90012})
+	if err != nil || got != 90002 {
+		t.Fatalf("downgrade-safe pick = %d, %v; want 90002", got, err)
 	}
 	// 勋章没有同族对应关系，只能随机，但必须落在候选集里。
 	medals := []uint32{100380031, 100380032, 100380033}
 	for attempt := 0; attempt < 32; attempt++ {
 		picked, err := currentGuildCompoundPickResult(
-			dnfguild.CompoundFlag, []uint32{100380021, 100380021, 100380021, 100380021}, 2, medals)
+			dnfguild.CompoundFlag, []uint32{100380021, 100380021, 100380021, 100380021}, false, 2, medals)
 		if err != nil {
 			t.Fatalf("pick error = %v", err)
 		}
@@ -208,7 +214,9 @@ func TestCurrentGuildCompoundPickResultPrefersTheGemFamily(t *testing.T) {
 			t.Fatalf("picked %d, which is not a rarity-2 medal", picked)
 		}
 	}
-	if _, err := currentGuildCompoundPickResult(dnfguild.CompoundFlag, nil, 2, nil); !errors.Is(err, errCurrentGuildCompoundNoCandidate) {
+	if _, err := currentGuildCompoundPickResult(
+		dnfguild.CompoundFlag, nil, false, 2, nil,
+	); !errors.Is(err, errCurrentGuildCompoundNoCandidate) {
 		t.Fatalf("empty candidate error = %v", err)
 	}
 }

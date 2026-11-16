@@ -62,8 +62,8 @@ func TestLoadCompoundCatalogMatchesTheLivePVF(t *testing.T) {
 	}
 }
 
-// 成功率 0 的那一行是封顶行，不是"永远失败"。
-func TestCompoundTopRowIsNotCompoundable(t *testing.T) {
+// 成功率 0 的那一行是封顶行：合法合成仍返回同档产物，只是不升级。
+func TestCompoundTopRowReturnsSameRarity(t *testing.T) {
 	catalog, err := LoadCompoundCatalog(compoundTestSource(liveCompoundTable))
 	if err != nil {
 		t.Fatalf("LoadCompoundCatalog() error = %v", err)
@@ -76,8 +76,13 @@ func TestCompoundTopRowIsNotCompoundable(t *testing.T) {
 		{kind: CompoundFlag, rarity: 6},
 	} {
 		recipe, _ := catalog.Ladder(row.kind).Recipe(row.rarity)
-		if recipe.Compoundable() {
-			t.Fatalf("%s rarity %d must be the top of the ladder", row.kind, row.rarity)
+		if !recipe.Compoundable() || recipe.UpgradeRateFor(2) != 0 {
+			t.Fatalf("%s rarity %d must be compoundable at 0%% upgrade rate",
+				row.kind, row.rarity)
+		}
+		if _, hasNext := catalog.Ladder(row.kind).NextRarity(row.rarity); hasNext {
+			t.Fatalf("%s rarity %d must not have a higher target rarity",
+				row.kind, row.rarity)
 		}
 	}
 }
@@ -99,7 +104,7 @@ func TestLoadCompoundCatalogRejectsMalformedTables(t *testing.T) {
 
 // 件数是 2..上限的区间，成功率随件数线性上涨、封顶 100%。
 // 第一版把上限当成"必须正好这么多件"，玩家放 2 件被一句「无法进行合成。」挡掉。
-func TestCompoundSuccessRateScalesWithMaterialCount(t *testing.T) {
+func TestCompoundUpgradeRateScalesWithMaterialCount(t *testing.T) {
 	catalog, err := LoadCompoundCatalog(compoundTestSource(liveCompoundTable))
 	if err != nil {
 		t.Fatalf("LoadCompoundCatalog() error = %v", err)
@@ -123,7 +128,7 @@ func TestCompoundSuccessRateScalesWithMaterialCount(t *testing.T) {
 		// 区间外一律 0，且 AcceptsMaterialCount 会先把请求挡掉。
 		{kind: CompoundGem, rarity: 0, count: 1, want: 0},
 		{kind: CompoundGem, rarity: 0, count: 5, want: 0},
-		// 封顶行任何件数都不可合成。
+		// 封顶行的升级概率为 0，但 2 件仍可合法合成并返回同档。
 		{kind: CompoundGem, rarity: 3, count: 2, want: 0},
 		{kind: CompoundFlag, rarity: 6, count: 2, want: 0},
 	} {
@@ -131,21 +136,24 @@ func TestCompoundSuccessRateScalesWithMaterialCount(t *testing.T) {
 		if !found {
 			t.Fatalf("%s rarity %d missing", row.kind, row.rarity)
 		}
-		if got := recipe.SuccessRateFor(row.count); got != row.want {
+		if got := recipe.UpgradeRateFor(row.count); got != row.want {
 			t.Fatalf("%s rarity %d with %d materials = %d, want %d",
 				row.kind, row.rarity, row.count, got, row.want)
 		}
-		if accepted := recipe.AcceptsMaterialCount(row.count); accepted != (row.want > 0) {
+		wantAccepted := row.kind == CompoundGem && row.rarity == 3 ||
+			row.kind == CompoundFlag && row.rarity == 6 ||
+			row.want > 0
+		if accepted := recipe.AcceptsMaterialCount(row.count); accepted != wantAccepted {
 			t.Fatalf("%s rarity %d accepts %d = %t, want %t",
-				row.kind, row.rarity, row.count, accepted, row.want > 0)
+				row.kind, row.rarity, row.count, accepted, wantAccepted)
 		}
 	}
 }
 
 // 成功率封顶 100%：哪怕表被改成更大的每件贡献，也不能溢出分母。
-func TestCompoundSuccessRateIsCappedAtFullOdds(t *testing.T) {
+func TestCompoundUpgradeRateIsCappedAtFullOdds(t *testing.T) {
 	recipe := CompoundRecipe{Rarity: 0, MaxMaterialCount: 4, RatePerMaterial: 9000}
-	if got := recipe.SuccessRateFor(4); got != CompoundRateDenominator {
+	if got := recipe.UpgradeRateFor(4); got != CompoundRateDenominator {
 		t.Fatalf("rate = %d, want the %d cap", got, CompoundRateDenominator)
 	}
 }
