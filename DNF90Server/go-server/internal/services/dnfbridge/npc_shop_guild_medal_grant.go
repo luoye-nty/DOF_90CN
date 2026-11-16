@@ -69,6 +69,7 @@ func grantCurrentGuildMedalListProduct(
 	count uint32,
 	slotStart int16,
 	slotEnd int16,
+	qualitySeed ...uint32,
 ) ([]int16, error) {
 	if inventory == nil || count == 0 || definition.ItemID == 0 || slotEnd < slotStart ||
 		slotStart < currentGuildMedalPageSlotStart || slotEnd > currentGuardianGemPageSlotEnd {
@@ -181,7 +182,7 @@ func grantCurrentGuildMedalListProduct(
 		if seedSlot <= 0 {
 			seedSlot = 1
 		}
-		stack, err := buildCurrentDungeonPickupStack(seedSlot, definition, chunk)
+		stack, err := buildCurrentDungeonPickupStack(seedSlot, definition, chunk, qualitySeed...)
 		if err != nil {
 			return nil, err
 		}

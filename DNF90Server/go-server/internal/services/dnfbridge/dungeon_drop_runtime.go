@@ -142,6 +142,32 @@ func (s *Service) planCurrentDungeonMonsterDrops(
 	monster runtimeDungeonMonster,
 	ownerActorObjectKey uint16,
 ) ([]currentDungeonDeathDropWire, error) {
+	// This compatibility wrapper keeps the pure drop tests and non-death callers
+	// on the historical scene-drop path. The live monster-death handler uses the
+	// direct variant below so [flag] medals never enter the current client's
+	// broken flag-pickup transaction.
+	return s.planCurrentDungeonMonsterDropsCommon(runtime, monster, ownerActorObjectKey, nil)
+}
+
+func (s *Service) planCurrentDungeonMonsterDropsWithDirectMedals(
+	runtime *runtimeDungeonState,
+	monster runtimeDungeonMonster,
+	ownerActorObjectKey uint16,
+) ([]currentDungeonDeathDropWire, []currentDungeonDirectMedalDrop, error) {
+	directDrops := make([]currentDungeonDirectMedalDrop, 0, 1)
+	wires, err := s.planCurrentDungeonMonsterDropsCommon(runtime, monster, ownerActorObjectKey, &directDrops)
+	if err != nil {
+		return nil, nil, err
+	}
+	return wires, directDrops, nil
+}
+
+func (s *Service) planCurrentDungeonMonsterDropsCommon(
+	runtime *runtimeDungeonState,
+	monster runtimeDungeonMonster,
+	ownerActorObjectKey uint16,
+	directDrops *[]currentDungeonDirectMedalDrop,
+) ([]currentDungeonDeathDropWire, error) {
 	// A raid gate drops nothing at all -- no monster drops, no regional materials,
 	// no gold. Its reward is the phase settlement, so a farming drop inside the gate
 	// would hand the raid's reward out twice. The 86JP reference reaches the same
@@ -208,9 +234,11 @@ func (s *Service) planCurrentDungeonMonsterDrops(
 	raw := rules.RawTables()
 
 	type plannedDrop struct {
-		itemID uint32
-		amount uint32
-		gold   bool
+		itemID      uint32
+		amount      uint32
+		gold        bool
+		directMedal bool
+		qualitySeed uint32
 	}
 	selectedDrops := make([]plannedDrop, 0, 8)
 
@@ -542,12 +570,44 @@ func (s *Service) planCurrentDungeonMonsterDrops(
 	if len(selectedDrops) == 0 {
 		return nil, nil
 	}
+
+	groundDropCount := 0
+	for index := range selectedDrops {
+		selected := &selectedDrops[index]
+		if selected.gold {
+			groundDropCount++
+			continue
+		}
+		definition, resolveErr := dropCatalog.ResolveItem(selected.itemID)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		if directDrops != nil && currentDungeonDirectGuildMedalDrop(definition) {
+			qualitySeed, seedErr := newCurrentEquipmentQualitySeed()
+			if seedErr != nil {
+				return nil, seedErr
+			}
+			selected.directMedal = true
+			selected.qualitySeed = qualitySeed
+			*directDrops = append(*directDrops, currentDungeonDirectMedalDrop{
+				Definition:  definition,
+				Amount:      selected.amount,
+				QualitySeed: qualitySeed,
+			})
+			continue
+		}
+		groundDropCount++
+	}
+	if groundDropCount == 0 {
+		return nil, nil
+	}
+
 	owner := runtime.DropOwner
 	if owner == nil {
 		owner = newRuntimeDungeonDropOwner()
 	}
 	nextObjectKey := owner.nextObjectKeyAtOrAbove(runtime.NextObjectKey)
-	count := uint32(len(selectedDrops))
+	count := uint32(groundDropCount)
 	if nextObjectKey == 0 || nextObjectKey > math.MaxUint16 ||
 		count > math.MaxUint16-nextObjectKey {
 		return nil, fmt.Errorf(
@@ -570,6 +630,9 @@ func (s *Service) planCurrentDungeonMonsterDrops(
 	wires := make([]currentDungeonDeathDropWire, 0, count)
 	nextSceneSlot := owner.nextSceneSlot
 	for _, selected := range selectedDrops {
+		if selected.directMedal {
+			continue
+		}
 		definition := dungeonDropItemDefinition{ItemID: 0, Kind: dungeonDropItemStackable}
 		if !selected.gold {
 			var err error

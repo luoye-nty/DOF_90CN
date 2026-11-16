@@ -714,11 +714,17 @@ func (s *Service) handleDungeonMonsterDeathLocal(session *gameSession, body []by
 		)
 	}
 	var deathDrops []currentDungeonDeathDropWire
+	var directMedalDrops []currentDungeonDirectMedalDrop
+	var directMedalDelivery currentDungeonDirectMedalDelivery
 	dropSource := "none"
 	if currentDungeonRuntimeIsPractice(runtime) {
 		dropSource = "practice_zero_growth_isolation"
 	} else if rewardMonsterCandidate {
-		deathDrops, err = s.planCurrentDungeonMonsterDrops(runtime, rewardMonster, playerObjectKey)
+		deathDrops, directMedalDrops, err = s.planCurrentDungeonMonsterDropsWithDirectMedals(
+			runtime,
+			rewardMonster,
+			playerObjectKey,
+		)
 		if err != nil {
 			reason := "runtime_pvf_csharp_formula_drop_plan_failed_zero_drop_fallback"
 			dropSource = "zero_drop_fallback"
@@ -735,8 +741,11 @@ func (s *Service) handleDungeonMonsterDeathLocal(session *gameSession, body []by
 				"reason", reason,
 				"error", err)
 			deathDrops = nil
+			directMedalDrops = nil
 		} else if len(deathDrops) != 0 {
 			dropSource = "runtime_pvf_csharp_drop_formula_standard_item_branch"
+		} else if len(directMedalDrops) != 0 {
+			dropSource = "runtime_pvf_csharp_drop_formula_direct_medal_branch"
 		} else {
 			dropSource = "runtime_pvf_csharp_drop_formula_no_standard_item"
 		}
@@ -770,6 +779,56 @@ func (s *Service) handleDungeonMonsterDeathLocal(session *gameSession, body []by
 					"selected_drops", selectedRiftDrops,
 					"source", "pvf_inferno_or_particular_hell_plus_itemdropinfo_monster_hell")
 			}
+		}
+	}
+	if len(directMedalDrops) != 0 {
+		deliveryContext, cancelDelivery := context.WithTimeout(context.Background(), createWriteTimeout)
+		directMedalDelivery, err = s.grantCurrentDungeonDirectMedalDrops(
+			deliveryContext,
+			session,
+			runtime,
+			scene.Coordinate.String(),
+			rewardMonster.ObjectKey,
+			directMedalDrops,
+		)
+		cancelDelivery()
+		if err != nil {
+			fallback, fallbackErr := s.appendCurrentDungeonDirectMedalGroundFallback(
+				runtime,
+				playerObjectKey,
+				directMedalDrops,
+			)
+			if fallbackErr == nil {
+				deathDrops = append(deathDrops, fallback...)
+			}
+			s.logGameEvent(session, "game-dungeon-direct-medal-drop-fallback",
+				"dungeon_id", runtime.Dungeon.ID,
+				"maze_index", runtime.MazeIndex,
+				"room", scene.Coordinate.String(),
+				"map_id", scene.Map.Map.ID,
+				"monster_id", rewardMonster.Spawn.MonsterID,
+				"monster_object_key", rewardMonster.ObjectKey,
+				"drop_count", len(directMedalDrops),
+				"reason", "direct_medal_delivery_failed_scene_fallback",
+				"error", err,
+				"fallback_drop_count", len(fallback),
+				"fallback_error", fallbackErr)
+			directMedalDelivery = currentDungeonDirectMedalDelivery{}
+			err = nil
+		} else {
+			s.logGameEvent(session, "game-dungeon-direct-medal-drop-delivered",
+				"dungeon_id", runtime.Dungeon.ID,
+				"maze_index", runtime.MazeIndex,
+				"room", scene.Coordinate.String(),
+				"map_id", scene.Map.Map.ID,
+				"monster_id", rewardMonster.Spawn.MonsterID,
+				"monster_object_key", rewardMonster.ObjectKey,
+				"drop_count", len(directMedalDrops),
+				"inventory_rows", len(directMedalDelivery.Entries),
+				"mail_id", directMedalDelivery.MailID,
+				"mail_attachments", directMedalDelivery.MailAttachments,
+				"reused", directMedalDelivery.Reused,
+				"source", currentDungeonDirectMedalDropSource)
 		}
 	}
 	var monsterExperience currentDungeonMonsterExperienceCommitResult
@@ -822,6 +881,16 @@ func (s *Service) handleDungeonMonsterDeathLocal(session *gameSession, body []by
 	}
 	if err := s.sendGameUpperRawClass(session, uint16(dnfenum.CmdPacketNotifyDieMonster), responseBody, 0); err != nil {
 		return err
+	}
+	if len(directMedalDelivery.Entries) != 0 {
+		if err := s.sendGameUpperRawClass(
+			session,
+			uint16(dnfenum.CmdPacketWalkoutPartyMember),
+			buildCurrentItemUpdateBody(currentGuildMedalInventoryListType, directMedalDelivery.Entries),
+			0,
+		); err != nil {
+			return err
+		}
 	}
 	if err := s.publishCurrentDungeonBossEntranceGateAfterDeathLocked(session, runtime); err != nil {
 		return err
