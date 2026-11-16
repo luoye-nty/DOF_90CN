@@ -481,7 +481,7 @@ func currentDungeonCardItemReward(
 		qualitySeed := rng.NextUint32()%currentEquipmentRandomQualitySeedCount + 1
 		extra["quality_seed"] = strconv.FormatUint(uint64(qualitySeed), 10)
 	}
-	return dungeonCardItemReward{
+	reward := dungeonCardItemReward{
 		ItemID:     int64(itemID),
 		Count:      1,
 		Stackable:  definition.Kind == dungeonDropItemStackable,
@@ -490,7 +490,36 @@ func currentDungeonCardItemReward(
 		SlotEnd:    definition.SlotEnd,
 		ExpireAt:   definition.ExpirationDate,
 		Extra:      extra,
-	}, nil
+	}
+	if currentChronicleAuraCardRewardDefinition(definition) {
+		stack := dnfrepo.ItemStack{
+			ItemID: int64(itemID),
+			Count:  1,
+			Extra:  extra,
+		}
+		entry := currentItemListEntryFromStack(
+			dnfrepo.MainInventoryListType,
+			0,
+			stack,
+		)
+		reward.RawEntry = append([]byte(nil), entry.data[:]...)
+	}
+	return reward, nil
+}
+
+// current chronicle aura equipment persistently stores its applied skill
+// options in the 119-byte item row at +0x27. A card reward cannot remain a
+// display-only Extra row: the later op370 path requires that row to exist and
+// mutate it atomically. Keep this repair scoped to the rarity-5 third-chronicle
+// equipment family so ordinary card-reward equipment writes stay unchanged.
+func currentChronicleAuraCardRewardDefinition(
+	definition dungeonDropItemDefinition,
+) bool {
+	if definition.Kind != dungeonDropItemEquipment || definition.Rarity != 5 {
+		return false
+	}
+	path := strings.ToLower(strings.ReplaceAll(definition.PVFPath, "\\", "/"))
+	return strings.Contains(path, "3choro")
 }
 
 func (s *Service) selectCurrentDungeonCardLocked(
