@@ -33,6 +33,7 @@ type ClearMapCompletionInput struct {
 	AllRoomsCleared   bool
 	WeddingCouple     bool // Exactly the engaged pair completed an ordinary dungeon.
 	CompletionKey     string
+	StartedAt         time.Time
 	CompletedAt       time.Time
 }
 
@@ -272,6 +273,16 @@ func clearCompletionMatchChannel(definition Definition, input ClearMapCompletion
 		}
 		return 0, false
 	}
+	// Daily racing missions store their time limit in the separate
+	// [clear a dungeon sub int data] section while [int data] lists the
+	// accepted dungeon/difficulty pairs.
+	if typeTag == "clear a dungeon" && definition.SubType == 0 {
+		if !clearCompletionWithinTime(definition.ClearADungeonSubIntData, input) ||
+			!clearADungeonAlternativesMatch(definition.IntData, input) {
+			return 0, false
+		}
+		return 0, true
+	}
 	if typeTag != "condition under clear" {
 		return 0, false
 	}
@@ -280,6 +291,29 @@ func clearCompletionMatchChannel(definition Definition, input ClearMapCompletion
 		return 0, false
 	}
 	switch definition.SubType {
+	case 0:
+		// Timed clears use [dungeon/difficulty/time-limit-seconds] rows.
+		// Challenge quests append one extra selector flag, so preserve the
+		// authored row width instead of treating every value as a timer.
+		stride := 3
+		if len(values) >= 4 && len(values)%4 == 0 {
+			stride = 4
+		}
+		for offset := 0; offset+2 < len(values); offset += stride {
+			selector := values[offset]
+			minDifficulty := values[offset+1]
+			timeLimitSeconds := values[offset+2]
+			if !clearTimedDungeonSelectorMatches(selector, input.DungeonID) {
+				continue
+			}
+			if minDifficulty >= 0 && input.Difficulty < minDifficulty {
+				continue
+			}
+			if !clearCompletionWithinTime([]int64{timeLimitSeconds}, input) {
+				continue
+			}
+			return 0, true
+		}
 	case 6, 22:
 		stride := 3
 		if len(values) == 2 {
@@ -344,6 +378,39 @@ func clearCompletionMatchChannel(definition Definition, input ClearMapCompletion
 		}
 	}
 	return 0, false
+}
+
+func clearADungeonAlternativesMatch(values []int64, input ClearMapCompletionInput) bool {
+	for offset := 0; offset+1 < len(values); offset += 2 {
+		if values[offset] != input.DungeonID {
+			continue
+		}
+		if values[offset+1] >= 0 && input.Difficulty < values[offset+1] {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// Negative selectors in timed quests are authored wildcard/daily forms.
+// Positive selectors remain exact dungeon IDs so unrelated clears cannot
+// satisfy a dungeon-specific objective.
+func clearTimedDungeonSelectorMatches(selector, dungeonID int64) bool {
+	if selector > 0 {
+		return selector == dungeonID
+	}
+	return selector == -1 || selector == -3
+}
+
+func clearCompletionWithinTime(limits []int64, input ClearMapCompletionInput) bool {
+	if len(limits) == 0 || limits[0] <= 0 {
+		return true
+	}
+	if input.StartedAt.IsZero() || input.CompletedAt.IsZero() || input.CompletedAt.Before(input.StartedAt) {
+		return false
+	}
+	return input.CompletedAt.Sub(input.StartedAt) <= time.Duration(limits[0])*time.Second
 }
 
 func decrementClearTriggerChannel(trigger uint32, channel int) uint32 {

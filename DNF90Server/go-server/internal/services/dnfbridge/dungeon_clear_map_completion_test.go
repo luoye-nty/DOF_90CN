@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"longheng.io/server/internal/modules/dnf/dnfenum"
 	dnfproto "longheng.io/server/internal/modules/dnf/protocol"
@@ -140,6 +141,49 @@ func TestBossDieCheckPersistsRealClearMapPhaseABeforeSettlementAcrossDungeonKind
 				}
 			}
 		})
+	}
+}
+
+func TestCurrentDungeonTimedClearMapUsesAuthoritativeRuntimeElapsed(t *testing.T) {
+	service, runtime := prepareTutorialScopeRuntime(t, tutorialScopeFixtureOptions{disableTutorial: true, singleMonster: true})
+	repositories, ok := service.repositoryGroup()
+	if !ok {
+		t.Fatal("repository group unavailable")
+	}
+	service.questCatalog = buildTimedDungeonClearMapCompletionCatalog(t, runtime.Dungeon.ID)
+	startedAt := time.Date(2026, 11, 17, 15, 32, 39, 0, time.UTC)
+	runtime.startedAt = startedAt
+	runtime.clearMapCompletionAt = startedAt.Add(38 * time.Second)
+	if err := repositories.Quest.Save(context.Background(), dnfrepo.QuestRecord{
+		CharacterID: "99",
+		States:      map[int64]dnfrepo.QuestState{13701: {Status: "active", ProgressValue: 1}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.Room.AnnounceAllActors(runtime.Session); err != nil {
+		t.Fatal(err)
+	}
+	targetKey := runtime.Room.Snapshot().Monsters[0].ObjectKey
+	if _, cleared, err := runtime.Room.CommitActorDeathReport(targetKey, runtime.Session); err != nil || !cleared {
+		t.Fatalf("commit boss death cleared=%t err=%v", cleared, err)
+	}
+	conn := &bufferConn{}
+	session := &gameSession{
+		conn: conn, connID: "timed-clear-map-phase-a", selectedCharacterID: 99,
+		dungeon: dungeonSessionState{runtime: runtime},
+	}
+	if err := service.handleDungeonBossDieCheck(
+		session, bossDieCheckRequestBody(99, uint16(targetKey)),
+	); err != nil {
+		t.Fatal(err)
+	}
+	persisted, found, err := repositories.Quest.Load(context.Background(), "99")
+	if err != nil || !found {
+		t.Fatalf("load timed quest found=%t err=%v", found, err)
+	}
+	completed := persisted.States[13701]
+	if completed.ProgressValue != 0 || completed.Extra["reward_state"] != "pending" {
+		t.Fatalf("timed quest state=%+v", completed)
 	}
 }
 
@@ -638,6 +682,25 @@ func buildDungeonClearMapCompletionCatalog(t *testing.T, mapID int64) *dnfquest.
 			"[type]\n`[clear map]`\n[int data]\n" + fmt.Sprint(mapID) + "\n",
 		"n_quest/other.qst": "[grade]\n`[epic]`\n[level]\n1 99\n[job]\n`[gunner]`\n" +
 			"[type]\n`[clear map]`\n[int data]\n99999\n",
+	}
+	index, err := dnfpvf.Build(context.Background(), source, dnfpvf.BuildOptions{Lists: []string{dnfquest.DefaultList}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := dnfquest.Load(context.Background(), index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return catalog
+}
+
+func buildTimedDungeonClearMapCompletionCatalog(t *testing.T, dungeonID int64) *dnfquest.Catalog {
+	t.Helper()
+	source := questListTestSource{
+		dnfquest.DefaultList: "13701 `timed.qst`\n",
+		"n_quest/timed.qst": "[grade]\n`[side]`\n[level]\n84 99\n[job]\n`[all]`\n" +
+			"[type]\n`[condition under clear]`\n[sub type]\n0\n[int data]\n" +
+			fmt.Sprint(dungeonID) + " -1 300\n",
 	}
 	index, err := dnfpvf.Build(context.Background(), source, dnfpvf.BuildOptions{Lists: []string{dnfquest.DefaultList}})
 	if err != nil {

@@ -140,51 +140,52 @@ func (c *Catalog) HasHellPartyUnlock(questID int64) bool {
 // Definition is the subset of a PVF quest definition required to decide
 // whether the quest belongs in ENUM_NOTIPACKET_ACCEPTABLE_QUEST_LIST.
 type Definition struct {
-	ID                     int64
-	Path                   string
-	Name                   string
-	DependMessage          string
-	ConditionMessage       string
-	SolveMessage           string
-	Grade                  string
-	Type                   string
-	SubType                int
-	IntData                []int64
-	CheckCount             []int64
-	ConditionData          []int64
-	DependGiveItemData     []int64
-	HasDependGiveItem      bool
-	CantGiveUp             bool
-	LevelMin               int
-	LevelMax               int
-	Job                    string
-	TargetCharacter        string
-	TargetCharacterRules   []TargetCharacterRule
-	GrowType               int
-	HasGrowType            bool
-	JobChangeQuest         int
-	ExposedByNPC           int64
-	IsEvent                bool
-	HasCreatureRequirement bool
-	HasExpertRequirement   bool
-	MainQuestID            int64
-	PreRequiredGroups      [][]int64
-	PreRequiredAnswers     []QuestAnswerRequirement
-	MalformedPreAnswers    bool
-	CollisionQuests        []int64
-	Difficulty             string
-	IgnoreQuestLevel4Exp   bool
-	NoExperience           bool
-	RewardType             string
-	RewardIntData          []int64
-	HasGoldReward          bool
-	GoldMultiple           int
-	RewardItems            []RewardItemRule
-	RewardSelectionItems   []RewardItemRule
-	RewardParseError       string
-	MonsterRewardItems     []MonsterRewardItemEntry
-	EnemyRewardItems       []EnemyRewardItemEntry
-	DungeonScopes          []DungeonScope
+	ID                      int64
+	Path                    string
+	Name                    string
+	DependMessage           string
+	ConditionMessage        string
+	SolveMessage            string
+	Grade                   string
+	Type                    string
+	SubType                 int
+	IntData                 []int64
+	ClearADungeonSubIntData []int64
+	CheckCount              []int64
+	ConditionData           []int64
+	DependGiveItemData      []int64
+	HasDependGiveItem       bool
+	CantGiveUp              bool
+	LevelMin                int
+	LevelMax                int
+	Job                     string
+	TargetCharacter         string
+	TargetCharacterRules    []TargetCharacterRule
+	GrowType                int
+	HasGrowType             bool
+	JobChangeQuest          int
+	ExposedByNPC            int64
+	IsEvent                 bool
+	HasCreatureRequirement  bool
+	HasExpertRequirement    bool
+	MainQuestID             int64
+	PreRequiredGroups       [][]int64
+	PreRequiredAnswers      []QuestAnswerRequirement
+	MalformedPreAnswers     bool
+	CollisionQuests         []int64
+	Difficulty              string
+	IgnoreQuestLevel4Exp    bool
+	NoExperience            bool
+	RewardType              string
+	RewardIntData           []int64
+	HasGoldReward           bool
+	GoldMultiple            int
+	RewardItems             []RewardItemRule
+	RewardSelectionItems    []RewardItemRule
+	RewardParseError        string
+	MonsterRewardItems      []MonsterRewardItemEntry
+	EnemyRewardItems        []EnemyRewardItemEntry
+	DungeonScopes           []DungeonScope
 }
 
 type Catalog struct {
@@ -1220,6 +1221,7 @@ func parseDefinition(entry dnfpvf.ListEntry, doc *dnfpvf.Document) Definition {
 		definition.SubType = boundedInt(value)
 	}
 	definition.IntData = append([]int64(nil), doc.Ints("int data")...)
+	definition.ClearADungeonSubIntData = append([]int64(nil), doc.Ints("clear a dungeon sub int data")...)
 	definition.CheckCount = append([]int64(nil), doc.Ints("check count")...)
 	definition.ConditionData = append([]int64(nil), doc.Ints("condition data")...)
 	if tokens, ok := doc.Section("depend give item"); ok {

@@ -188,6 +188,7 @@ func (s *Service) persistCurrentDungeonClearMapCompletionPhaseAWithAuthority(
 		HellPartyComplete: hellPartyComplete,
 		AllRoomsCleared:   allRoomsCleared,
 		CompletionKey:     runtime.clearMapCompletionKey,
+		StartedAt:         runtime.startedAt,
 		CompletedAt:       runtime.clearMapCompletionAt,
 	})
 	if err != nil {

@@ -89,6 +89,47 @@ func TestRealScriptPVFQuest1680ClearADungeonCompletionPlan(t *testing.T) {
 	}
 }
 
+func TestRealScriptPVFQuest13701TimedCompletionPlan(t *testing.T) {
+	pvfPath := os.Getenv("DNFBRIDGE_REAL_PVF_SMOKE")
+	if pvfPath == "" {
+		t.Skip("set DNFBRIDGE_REAL_PVF_SMOKE to verify real timed clear-map completion")
+	}
+	archive, err := platformpvf.LoadArchive(platformpvf.Options{Path: pvfPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := dnfpvf.Build(context.Background(), archive, dnfpvf.BuildOptions{Lists: []string{DefaultList}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := Load(context.Background(), index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, found := catalog.Find(13701)
+	if !found || normalizeQuestTag(definition.Type) != "condition under clear" ||
+		definition.SubType != 0 || !reflect.DeepEqual(definition.IntData, []int64{3200, -1, 300}) {
+		t.Fatalf("real quest 13701 definition=%+v found=%t", definition, found)
+	}
+	startedAt := time.Date(2026, 11, 17, 15, 32, 39, 0, time.UTC)
+	plan, err := catalog.PlanClearMapCompletion(dnfrepo.QuestRecord{
+		CharacterID: "9",
+		States:      map[int64]dnfrepo.QuestState{13701: {Status: "active", ProgressValue: 1}},
+	}, ClearMapCompletionInput{
+		DungeonID: 3200, Difficulty: 1,
+		CompletionKey: "real-pvf-timed/nateram/run",
+		StartedAt:     startedAt,
+		CompletedAt:   startedAt.Add(38 * time.Second),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Completions) != 1 || plan.Completions[0].QuestID != 13701 ||
+		!plan.Completions[0].Completed || plan.Record.States[13701].ProgressValue != 0 {
+		t.Fatalf("real quest 13701 timed plan=%+v", plan)
+	}
+}
+
 func TestRealScriptPVFQuest5782RegionalHellPartyCompletionPlan(t *testing.T) {
 	pvfPath := os.Getenv("DNFBRIDGE_REAL_PVF_SMOKE")
 	if pvfPath == "" {

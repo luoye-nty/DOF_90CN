@@ -113,6 +113,128 @@ func TestPlanConditionUnderClearSubtype6DecrementsPackedTarget(t *testing.T) {
 	}
 }
 
+func TestPlanConditionUnderClearSubtype0RequiresDungeonDifficultyAndTime(t *testing.T) {
+	const questID = 13701
+	source := catalogTestSource{
+		DefaultList: "13701 `timed.qst`\n",
+		"n_quest/timed.qst": questCatalogTestDefinition("[side]", 84, 99, "[all]",
+			"[type]\n`[condition under clear]`\n[sub type]\n0\n[int data]\n3200 1 300\n"),
+	}
+	index, err := dnfpvf.Build(context.Background(), source, dnfpvf.BuildOptions{Lists: []string{DefaultList}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := Load(context.Background(), index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, found := catalog.Find(questID)
+	if !found || definitionInitialTrigger(definition, nil) != 1 {
+		t.Fatalf("timed definition=%+v found=%t trigger=%d", definition, found, definitionInitialTrigger(definition, nil))
+	}
+	startedAt := time.Date(2026, 11, 17, 15, 32, 39, 0, time.UTC)
+	record := dnfrepo.QuestRecord{
+		CharacterID: "9",
+		States:      map[int64]dnfrepo.QuestState{questID: {Status: "active", ProgressValue: 1}},
+	}
+	for _, test := range []struct {
+		name       string
+		dungeonID  int64
+		difficulty int64
+		elapsed    time.Duration
+		want       bool
+	}{
+		{name: "within limit", dungeonID: 3200, difficulty: 1, elapsed: 38 * time.Second, want: true},
+		{name: "exact limit", dungeonID: 3200, difficulty: 1, elapsed: 300 * time.Second, want: true},
+		{name: "over limit", dungeonID: 3200, difficulty: 1, elapsed: 301 * time.Second, want: false},
+		{name: "wrong dungeon", dungeonID: 3201, difficulty: 1, elapsed: 38 * time.Second, want: false},
+		{name: "below difficulty", dungeonID: 3200, difficulty: 0, elapsed: 38 * time.Second, want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			plan, planErr := catalog.PlanClearMapCompletion(record, ClearMapCompletionInput{
+				DungeonID: test.dungeonID, Difficulty: test.difficulty,
+				CompletionKey: "timed/" + test.name,
+				StartedAt:     startedAt,
+				CompletedAt:   startedAt.Add(test.elapsed),
+			})
+			if planErr != nil {
+				t.Fatal(planErr)
+			}
+			if test.want {
+				if len(plan.Completions) != 1 || !plan.Completions[0].Completed ||
+					plan.Record.States[questID].ProgressValue != 0 ||
+					plan.Record.States[questID].Extra["reward_state"] != "pending" {
+					t.Fatalf("timed completion plan=%+v", plan)
+				}
+				return
+			}
+			if len(plan.Completions) != 0 || plan.Record.States[questID].ProgressValue != 1 {
+				t.Fatalf("timed rejection plan=%+v", plan)
+			}
+		})
+	}
+}
+
+func TestPlanClearADungeonSubtype0UsesSeparateTimeLimit(t *testing.T) {
+	const questID = 15000
+	source := catalogTestSource{
+		DefaultList: "15000 `daily_time.qst`\n",
+		"n_quest/daily_time.qst": questCatalogTestDefinition("[auto daily mission]", 81, 84, "[all]",
+			"[type]\n`[clear a dungeon]`\n[sub type]\n0\n[int data]\n101 2 102 2\n[clear a dungeon sub int data]\n120\n"),
+	}
+	index, err := dnfpvf.Build(context.Background(), source, dnfpvf.BuildOptions{Lists: []string{DefaultList}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := Load(context.Background(), index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, found := catalog.Find(questID)
+	if !found || !reflect.DeepEqual(definition.ClearADungeonSubIntData, []int64{120}) {
+		t.Fatalf("daily timed definition=%+v found=%t", definition, found)
+	}
+	startedAt := time.Date(2026, 11, 17, 15, 32, 39, 0, time.UTC)
+	record := dnfrepo.QuestRecord{
+		CharacterID: "9",
+		States:      map[int64]dnfrepo.QuestState{questID: {Status: "active", ProgressValue: 1}},
+	}
+	for _, test := range []struct {
+		name       string
+		dungeonID  int64
+		difficulty int64
+		elapsed    time.Duration
+		want       bool
+	}{
+		{name: "listed and in time", dungeonID: 102, difficulty: 2, elapsed: 100 * time.Second, want: true},
+		{name: "listed but over time", dungeonID: 102, difficulty: 2, elapsed: 121 * time.Second, want: false},
+		{name: "unlisted dungeon", dungeonID: 103, difficulty: 2, elapsed: 100 * time.Second, want: false},
+		{name: "below difficulty", dungeonID: 101, difficulty: 1, elapsed: 100 * time.Second, want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			plan, planErr := catalog.PlanClearMapCompletion(record, ClearMapCompletionInput{
+				DungeonID: test.dungeonID, Difficulty: test.difficulty,
+				CompletionKey: "daily-time/" + test.name,
+				StartedAt:     startedAt,
+				CompletedAt:   startedAt.Add(test.elapsed),
+			})
+			if planErr != nil {
+				t.Fatal(planErr)
+			}
+			if test.want {
+				if len(plan.Completions) != 1 || !plan.Completions[0].Completed ||
+					plan.Record.States[questID].ProgressValue != 0 {
+					t.Fatalf("daily timed completion plan=%+v", plan)
+				}
+				return
+			}
+			if len(plan.Completions) != 0 || plan.Record.States[questID].ProgressValue != 1 {
+				t.Fatalf("daily timed rejection plan=%+v", plan)
+			}
+		})
+	}
+}
+
 // 婚约任务 20737 的真实 PVF：[type] `[condition under clear]` + [sub type] 22 +
 // [int data] `-1 -1 5`，即"跟心上人组 2 人队通关普通地下城 5 次"。
 //
